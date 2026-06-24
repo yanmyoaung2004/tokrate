@@ -134,6 +134,20 @@ watch(() => config.serverUrl, () => { connectionOk.value = null; });
 </template>
 
 <style scoped>
+.settings-page {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-6);
+  max-width: 600px;
+}
+
+.page {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-6);
+  max-width: 600px;
+}
+
 .page-title {
   font-size: 20px;
   font-weight: 600;

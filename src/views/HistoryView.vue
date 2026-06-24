@@ -155,6 +155,8 @@ function formatMs(ms: number): string {
   height: 100%;
   display: flex;
   flex-direction: column;
+  padding: var(--space-6);
+  overflow: hidden;
 }
 
 .page-header {

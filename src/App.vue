@@ -42,6 +42,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  overflow: hidden;
 }
 
 .top-bar {
@@ -52,11 +53,12 @@ onMounted(async () => {
   border-bottom: 1px solid var(--border);
   background: var(--bg);
   min-height: 48px;
+  flex-shrink: 0;
 }
 
 .content {
   flex: 1;
-  overflow-y: auto;
-  padding: var(--space-6);
+  min-height: 0;
+  overflow: hidden;
 }
 </style>

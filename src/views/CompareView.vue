@@ -221,7 +221,7 @@ function clearResults() { results.value = []; }
 </template>
 
 <style scoped>
-.compare-page { height: 100%; display: flex; flex-direction: column; gap: var(--space-4); max-width: 1100px; margin: 0 auto; width: 100%; }
+.compare-page { height: 100%; display: flex; flex-direction: column; gap: var(--space-4); max-width: 1100px; margin: 0 auto; width: 100%; padding: var(--space-6); overflow: hidden; }
 .page-header { display: flex; align-items: center; gap: var(--space-4); }
 .page-title { font-size: 20px; font-weight: 600; margin-right: auto; }
 

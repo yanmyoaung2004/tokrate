@@ -34,6 +34,11 @@ async function loadModels() {
   }
 }
 
+function switchProvider(url: string, apiKey: string) {
+  config.selectProvider(url, apiKey);
+  loadModels();
+}
+
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
@@ -139,6 +144,26 @@ function canSave(): boolean {
         </select>
         <button class="refresh-btn" @click="loadModels" :disabled="loadingModels" title="Refresh models">↻</button>
         <span v-if="loadingModels" class="loading-hint">loading…</span>
+        <span class="separator">|</span>
+        <select
+          class="model-select provider-select"
+          :value="config.serverUrl"
+          @change="(e) => {
+            const idx = (e.target as HTMLSelectElement).selectedIndex - 1;
+            if (idx >= 0 && idx < config.providers.length) {
+              const p = config.providers[idx];
+              switchProvider(p.url, p.apiKey);
+            }
+          }"
+        >
+          <option value="" disabled>Provider…</option>
+          <option
+            v-for="p in config.providers"
+            :key="p.url"
+            :value="p.url"
+            :selected="p.url === config.serverUrl"
+          >{{ p.label }}</option>
+        </select>
       </div>
       <div class="action-btns" v-if="messages.length">
         <button v-if="canSave() && !streaming" class="btn btn-sm btn-outline" @click="saveRun">Save</button>
@@ -226,6 +251,7 @@ function canSave(): boolean {
   display: flex;
   flex-direction: column;
   height: 100%;
+  padding: var(--space-4) var(--space-6);
   max-width: 800px;
   margin: 0 auto;
   width: 100%;
@@ -279,6 +305,16 @@ function canSave(): boolean {
 .loading-hint {
   font-size: 11px;
   color: var(--muted);
+}
+
+.separator {
+  color: var(--border);
+  margin: 0 var(--space-1);
+}
+
+.provider-select {
+  max-width: 140px;
+  font-size: 12px;
 }
 
 .action-btns {

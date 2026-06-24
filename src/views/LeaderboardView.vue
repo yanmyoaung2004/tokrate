@@ -94,7 +94,7 @@ function formatMs(ms: number): string {
 </template>
 
 <style scoped>
-.lb-page { height: 100%; display: flex; flex-direction: column; gap: var(--space-4); max-width: 1000px; margin: 0 auto; width: 100%; }
+.lb-page { height: 100%; display: flex; flex-direction: column; gap: var(--space-4); max-width: 1000px; margin: 0 auto; width: 100%; padding: var(--space-6); overflow: hidden; }
 .page-title { font-size: 20px; font-weight: 600; }
 .page-subtitle { font-size: 13px; color: var(--muted); }
 
