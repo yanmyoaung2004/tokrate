@@ -9,28 +9,36 @@ const props = defineProps<{
 const containerRef = ref<HTMLElement | null>(null);
 let chart: import("echarts").ECharts | null = null;
 const tpsHistory = ref<{ time: number; tps: number }[]>([]);
-const startTime = ref(0);
+
+function cssVar(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
+}
 
 async function initChart() {
   if (!containerRef.value) return;
   const { init } = await import("echarts");
   chart = init(containerRef.value, undefined, { renderer: "canvas" });
+
+  const primary = cssVar("--primary");
+  const muted = cssVar("--muted");
+  const border = cssVar("--border");
+
   chart.setOption({
     grid: { left: 50, right: 20, top: 20, bottom: 25 },
     xAxis: {
       type: "value",
       name: "Time (s)",
-      nameTextStyle: { color: "var(--muted)", fontSize: 10 },
-      axisLine: { lineStyle: { color: "var(--border)" } },
-      splitLine: { lineStyle: { color: "var(--border)", opacity: 0.3 } },
+      nameTextStyle: { color: muted, fontSize: 10 },
+      axisLine: { lineStyle: { color: border } },
+      splitLine: { lineStyle: { color: border, opacity: 0.3 } },
     },
     yAxis: {
       type: "value",
       name: "TPS",
       min: 0,
-      nameTextStyle: { color: "var(--muted)", fontSize: 10 },
-      axisLine: { lineStyle: { color: "var(--border)" } },
-      splitLine: { lineStyle: { color: "var(--border)", opacity: 0.3 } },
+      nameTextStyle: { color: muted, fontSize: 10 },
+      axisLine: { lineStyle: { color: border } },
+      splitLine: { lineStyle: { color: border, opacity: 0.3 } },
     },
     series: [
       {
@@ -38,13 +46,13 @@ async function initChart() {
         data: [],
         smooth: true,
         showSymbol: false,
-        lineStyle: { width: 2, color: "var(--primary)" },
+        lineStyle: { width: 2, color: primary },
         areaStyle: {
           color: {
             type: "linear",
             x: 0, y: 0, x2: 0, y2: 1,
             colorStops: [
-              { offset: 0, color: "var(--primary)" },
+              { offset: 0, color: primary },
               { offset: 1, color: "transparent" },
             ],
           },
@@ -71,16 +79,12 @@ function updateChart() {
 
 function reset() {
   tpsHistory.value = [];
-  startTime.value = 0;
   if (chart) {
     chart.setOption({ series: [{ data: [] }] });
   }
 }
 
 watch(() => props.metrics, () => {
-  if (props.metrics.ttft && !startTime.value) {
-    startTime.value = Date.now();
-  }
   updateChart();
 }, { deep: true });
 
