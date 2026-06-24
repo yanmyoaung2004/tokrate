@@ -159,7 +159,7 @@ function canSave(): boolean {
           <option value="" disabled>Model…</option>
           <option v-for="m in models" :key="m" :value="m">{{ m }}</option>
         </select>
-        <button class="icon-btn" @click="loadModels" :disabled="loadingModels" title="Refresh models">↻</button>
+        <button class="icon-btn" @click="loadModels" :disabled="loadingModels" :title="loadingModels ? 'Loading...' : 'Reload model list'">{{ loadingModels ? "⋯" : "↻" }}</button>
         <button
           class="toggle thin"
           :class="{ on: thinkingEnabled }"
