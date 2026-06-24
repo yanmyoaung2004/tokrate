@@ -15,6 +15,7 @@ const prompt = ref("");
 const messages = ref<ChatMessage[]>([]);
 const streaming = ref(false);
 const liveMetrics = ref<Partial<RunMetrics>>({});
+const showCharts = ref(false);
 const abortController = ref<AbortController | null>(null);
 const speedChartRef = ref<InstanceType<typeof SpeedChart> | null>(null);
 const models = ref<string[]>([]);
@@ -62,6 +63,7 @@ async function send() {
   abortController.value = controller;
   streaming.value = true;
   liveMetrics.value = {};
+  showCharts.value = false;
 
   try {
     for await (const chunk of streamChat(
@@ -78,6 +80,7 @@ async function send() {
       }
       assistantMsg.content += chunk.content;
       liveMetrics.value = { ...chunk.metrics };
+      if (chunk.metrics.ttft) showCharts.value = true;
     }
   } catch (err: unknown) {
     if (err instanceof Error && err.name === "AbortError") {
@@ -101,6 +104,7 @@ function stop() {
 function clear() {
   messages.value = [];
   liveMetrics.value = {};
+  showCharts.value = false;
   speedChartRef.value?.reset();
 }
 
@@ -174,13 +178,13 @@ function canSave(): boolean {
     </div>
 
     <SpeedChart
-      v-if="liveMetrics.ttft"
+      v-if="showCharts"
       ref="speedChartRef"
       :metrics="liveMetrics"
     />
 
     <MetricsBar
-      v-if="liveMetrics.ttft"
+      v-if="showCharts"
       :metrics="liveMetrics"
       :streaming="streaming"
     />
