@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useConfigStore } from "@/stores/config";
 import { useHistoryStore } from "@/stores/history";
 import { useToastStore } from "@/stores/toast";
@@ -16,6 +16,11 @@ const messages = ref<ChatMessage[]>([]);
 const streaming = ref(false);
 const liveMetrics = ref<Partial<RunMetrics>>({});
 const showCharts = ref(false);
+const showReasoning = ref(true);
+const hasReasoning = computed(() => messages.value.some((m) => m.reasoning));
+const thinkingEnabled = ref(true);
+const thinkingMetrics = ref({ tokens: 0, time: 0, tps: 0 });
+const answeringMetrics = ref({ tokens: 0, time: 0, tps: 0 });
 const abortController = ref<AbortController | null>(null);
 const speedChartRef = ref<InstanceType<typeof SpeedChart> | null>(null);
 const models = ref<string[]>([]);
@@ -56,7 +61,7 @@ async function send() {
   const currentPrompt = prompt.value;
   prompt.value = "";
 
-  const assistantMsg: ChatMessage = { role: "assistant", content: "" };
+  const assistantMsg: ChatMessage = { role: "assistant", content: "", reasoning: "" };
   messages.value.push(assistantMsg);
 
   const controller = new AbortController();
@@ -64,6 +69,8 @@ async function send() {
   streaming.value = true;
   liveMetrics.value = {};
   showCharts.value = false;
+  thinkingMetrics.value = { tokens: 0, time: 0, tps: 0 };
+  answeringMetrics.value = { tokens: 0, time: 0, tps: 0 };
 
   try {
     for await (const chunk of streamChat(
@@ -71,7 +78,7 @@ async function send() {
       config.apiKey,
       selectedModel.value || config.defaultModel || "llama3.2",
       [{ role: "user", content: currentPrompt }],
-      { signal: controller.signal }
+      { signal: controller.signal, thinking: thinkingEnabled.value }
     )) {
       if (chunk.done) {
         assistantMsg.metrics = chunk.metrics as RunMetrics;
@@ -79,8 +86,23 @@ async function send() {
         break;
       }
       assistantMsg.content += chunk.content;
+      if (chunk.reasoningContent) {
+        assistantMsg.reasoning = (assistantMsg.reasoning || "") + chunk.reasoningContent;
+      }
       liveMetrics.value = { ...chunk.metrics };
       if (chunk.metrics.ttft) showCharts.value = true;
+
+      // Phase tracking
+      const dur = chunk.metrics.duration || 0;
+      if (chunk.phase === "thinking") {
+        thinkingMetrics.value.tokens++;
+        thinkingMetrics.value.time = dur;
+        thinkingMetrics.value.tps = thinkingMetrics.value.tokens / (dur / 1000);
+      } else if (chunk.phase === "answering") {
+        answeringMetrics.value.tokens++;
+        answeringMetrics.value.time = dur;
+        answeringMetrics.value.tps = answeringMetrics.value.tokens / (dur / 1000);
+      }
     }
   } catch (err: unknown) {
     if (err instanceof Error && err.name === "AbortError") {
@@ -151,6 +173,14 @@ function canSave(): boolean {
         <button class="refresh-btn" @click="loadModels" :disabled="loadingModels" title="Refresh models">↻</button>
         <span v-if="loadingModels" class="loading-hint">loading…</span>
         <span class="separator">|</span>
+        <button
+          class="thinking-toggle"
+          :class="{ on: thinkingEnabled }"
+          @click="thinkingEnabled = !thinkingEnabled"
+          :title="thinkingEnabled ? 'Thinking mode on (slower, deeper reasoning)' : 'Thinking mode off (faster)'"
+        >
+          {{ thinkingEnabled ? "🧠 Think" : "⚡ Fast" }}
+        </button>
         <select
           class="model-select provider-select"
           :value="config.serverUrl"
@@ -173,6 +203,9 @@ function canSave(): boolean {
       </div>
       <div class="action-btns" v-if="messages.length">
         <button v-if="canSave() && !streaming" class="btn btn-sm btn-outline" @click="saveRun">Save</button>
+        <button v-if="hasReasoning" class="btn btn-sm btn-ghost" @click="showReasoning = !showReasoning">
+          {{ showReasoning ? "Hide" : "Show" }} reasoning
+        </button>
         <button v-if="!streaming" class="btn btn-sm btn-ghost" @click="clear">Clear</button>
       </div>
     </div>
@@ -189,7 +222,22 @@ function canSave(): boolean {
       :streaming="streaming"
     />
 
-    <div class="chat-area" ref="chatRef">
+    <div v-if="showCharts && (thinkingMetrics.tokens || answeringMetrics.tokens)" class="phase-metrics">
+      <div v-if="thinkingMetrics.tokens" class="phase-block thinking">
+        <span class="phase-label">🧠 Thinking</span>
+        <span class="phase-speed">{{ thinkingMetrics.tps.toFixed(1) }} tok/s</span>
+        <span class="phase-tokens">{{ thinkingMetrics.tokens }} tokens</span>
+        <span class="phase-time">in {{ (thinkingMetrics.time / 1000).toFixed(1) }}s</span>
+      </div>
+      <div v-if="answeringMetrics.tokens" class="phase-block answering">
+        <span class="phase-label">💬 Answering</span>
+        <span class="phase-speed">{{ answeringMetrics.tps.toFixed(1) }} tok/s</span>
+        <span class="phase-tokens">{{ answeringMetrics.tokens }} tokens</span>
+        <span class="phase-time">in {{ (answeringMetrics.time / 1000).toFixed(1) }}s</span>
+      </div>
+    </div>
+
+    <div class="chat-area">
       <div v-if="!messages.length" class="empty">
         <div class="empty-icon">▷</div>
         <p class="empty-title">Ready</p>
@@ -205,6 +253,10 @@ function canSave(): boolean {
         <div class="msg-avatar">{{ msg.role === "user" ? "U" : "A" }}</div>
         <div class="msg-body">
           <div class="msg-label">{{ msg.role === "user" ? "You" : "Assistant" }}</div>
+          <details v-if="msg.reasoning && showReasoning" class="reasoning-block" open>
+            <summary class="reasoning-summary">Reasoning</summary>
+            <div class="reasoning-content">{{ msg.reasoning }}</div>
+          </details>
           <div class="msg-content">{{ msg.content }}</div>
           <div v-if="msg.metrics" class="msg-stats">
             <span>{{ (msg.metrics.ttft / 1000).toFixed(2) }}s TTFT</span>
@@ -324,6 +376,28 @@ function canSave(): boolean {
   font-size: 12px;
 }
 
+.thinking-toggle {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.thinking-toggle.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.thinking-toggle:hover {
+  border-color: var(--muted);
+}
+
 .action-btns {
   display: flex;
   gap: var(--space-2);
@@ -423,6 +497,37 @@ function canSave(): boolean {
   color: var(--ink);
 }
 
+.reasoning-block {
+  margin-bottom: var(--space-3);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+}
+
+.reasoning-summary {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  cursor: pointer;
+  user-select: none;
+}
+
+.reasoning-summary:hover {
+  opacity: 0.8;
+}
+
+.reasoning-content {
+  margin-top: var(--space-2);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .msg-stats {
   margin-top: var(--space-2);
   padding-top: var(--space-2);
@@ -515,6 +620,52 @@ function canSave(): boolean {
   color: var(--muted);
   text-align: right;
   padding-right: var(--space-1);
+}
+
+/* Phase metrics */
+.phase-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.phase-block {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+}
+
+.phase-block.thinking {
+  border-left: 2px solid var(--accent);
+}
+
+.phase-block.answering {
+  border-left: 2px solid var(--success);
+}
+
+.phase-label {
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.phase-speed {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.phase-tokens,
+.phase-time {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 
 /* Shared button styles */

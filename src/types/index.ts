@@ -1,13 +1,16 @@
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
+  reasoning?: string;
   metrics?: RunMetrics;
 }
 
 export interface StreamChunk {
   content: string;
+  reasoningContent?: string;
   done: boolean;
   metrics: Partial<RunMetrics>;
+  phase: "thinking" | "answering";
   raw?: Record<string, unknown>;
 }
 

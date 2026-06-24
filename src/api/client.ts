@@ -107,12 +107,14 @@ export async function* streamChat(
   apiKey: string,
   model: string,
   messages: { role: string; content: string }[],
-  options?: { temperature?: number; maxTokens?: number; signal?: AbortSignal }
+  options?: { temperature?: number; maxTokens?: number; thinking?: boolean; signal?: AbortSignal }
 ): AsyncGenerator<StreamChunk> {
   const base = normalizeUrl(serverUrl);
   const startTime = performance.now();
   let firstToken = true;
   let completionTokens = 0;
+  let inThinking = false;
+  let inAnswering = false;
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -128,6 +130,7 @@ export async function* streamChat(
       stream: true,
       temperature: options?.temperature ?? 0.7,
       max_tokens: options?.maxTokens ?? 2048,
+      ...(options?.thinking === false ? { reasoning_effort: "none" } : {}),
     }),
     signal: options?.signal,
   });
@@ -161,6 +164,7 @@ export async function* streamChat(
         yield {
           content: "",
           done: true,
+          phase: "answering",
           metrics: {
             ttft: 0,
             tpot: duration / (completionTokens || 1),
@@ -178,6 +182,7 @@ export async function* streamChat(
         const parsed = JSON.parse(data);
         const choice = parsed.choices?.[0];
         const delta = choice?.delta?.content || "";
+        const reasoningContent = choice?.delta?.reasoning_content || "";
         const finishReason = choice?.finish_reason;
         const usage = parsed.usage;
 
@@ -187,7 +192,7 @@ export async function* streamChat(
         const elapsed = now - startTime;
 
         let ttft = 0;
-        if (firstToken && delta) {
+        if (firstToken && (delta || reasoningContent)) {
           ttft = elapsed;
           firstToken = false;
         }
@@ -204,10 +209,21 @@ export async function* streamChat(
 
         const chunk: StreamChunk = {
           content: delta,
+          reasoningContent,
           done: !!finishReason || parsed.choices?.[0]?.finish_reason === "stop",
           metrics,
+          phase: inThinking ? "thinking" : "answering",
           raw: parsed,
         };
+
+        // Track phase transitions
+        if (reasoningContent && !inThinking && !inAnswering) {
+          inThinking = true;
+        }
+        if (inThinking && delta && !reasoningContent) {
+          inThinking = false;
+          inAnswering = true;
+        }
 
         yield chunk;
       } catch {
