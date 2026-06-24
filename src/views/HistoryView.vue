@@ -2,9 +2,11 @@
 import { onMounted, ref, computed } from "vue";
 import { useHistoryStore } from "@/stores/history";
 import type { BenchmarkRun } from "@/types";
+import PublishDialog from "@/components/PublishDialog.vue";
 
 const history = useHistoryStore();
 const selectedRun = ref<BenchmarkRun | null>(null);
+const publishRun = ref<BenchmarkRun | null>(null);
 const filter = ref("");
 
 const filteredRuns = computed(() => {
@@ -33,6 +35,12 @@ function formatMs(ms: number): string {
 </script>
 
 <template>
+  <PublishDialog
+    v-if="publishRun"
+    :run="publishRun"
+    @publish="publishRun = null"
+    @close="publishRun = null"
+  />
   <div class="history-page">
     <div class="page-header">
       <h1 class="page-title">History</h1>
@@ -80,7 +88,10 @@ function formatMs(ms: number): string {
       <div v-if="selectedRun" class="run-detail">
         <div class="detail-header">
           <h2>{{ selectedRun.model }}</h2>
-          <button class="btn btn-ghost btn-sm" @click="history.removeRun(selectedRun.id)">Delete</button>
+          <div class="detail-actions">
+            <button class="btn btn-secondary btn-sm" @click="publishRun = selectedRun">Publish</button>
+            <button class="btn btn-ghost btn-sm" @click="history.removeRun(selectedRun.id)">Delete</button>
+          </div>
         </div>
         <div class="detail-meta">
           <div class="meta-row">
@@ -247,6 +258,11 @@ function formatMs(ms: number): string {
   justify-content: space-between;
 }
 
+.detail-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
 .detail-header h2 {
   font-size: 18px;
   font-weight: 600;
@@ -332,5 +348,15 @@ function formatMs(ms: number): string {
 .btn-ghost:hover {
   background: var(--surface);
   color: var(--ink);
+}
+
+.btn-secondary {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--ink);
+}
+
+.btn-secondary:hover {
+  background: var(--border);
 }
 </style>
