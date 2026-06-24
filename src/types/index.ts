@@ -1,0 +1,69 @@
+export interface ChatMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+  metrics?: RunMetrics;
+}
+
+export interface StreamChunk {
+  content: string;
+  done: boolean;
+  metrics: Partial<RunMetrics>;
+  raw?: Record<string, unknown>;
+}
+
+export interface RunMetrics {
+  ttft: number;
+  tpot: number;
+  tps: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  duration: number;
+}
+
+export interface EngineConfig {
+  id: string;
+  label: string;
+  serverUrl: string;
+  apiKey: string;
+  model: string;
+  systemPrompt: string;
+  temperature: number;
+  maxTokens: number;
+}
+
+export interface ModelProfile {
+  name: string;
+  engine: string;
+  quantization?: string;
+  parameterSize?: string;
+}
+
+export interface BenchmarkRun {
+  id: string;
+  timestamp: number;
+  engineConfig: EngineConfig;
+  prompt: string;
+  response: string;
+  metrics: RunMetrics;
+  hardware: HardwareInfo;
+}
+
+export interface HardwareInfo {
+  os: string;
+  cpu: string;
+  ram: string;
+  gpu: string;
+}
+
+export interface LeaderboardEntry {
+  id: string;
+  engine: string;
+  model: string;
+  quantization?: string;
+  gpu: string;
+  tps: number;
+  ttft: number;
+  timestamp: number;
+  runCount: number;
+}

@@ -1,0 +1,344 @@
+<script setup lang="ts">
+import { ref } from "vue";
+import { useConfigStore } from "@/stores/config";
+import { streamChat } from "@/api/client";
+import type { ChatMessage, RunMetrics } from "@/types";
+
+const config = useConfigStore();
+const prompt = ref("");
+const messages = ref<ChatMessage[]>([]);
+const streaming = ref(false);
+const liveMetrics = ref<Partial<RunMetrics>>({});
+const abortController = ref<AbortController | null>(null);
+
+function formatMs(ms: number): string {
+  if (ms < 1000) return `${ms.toFixed(0)}ms`;
+  return `${(ms / 1000).toFixed(2)}s`;
+}
+
+async function send() {
+  if (!prompt.value.trim() || streaming.value) return;
+
+  const userMsg: ChatMessage = { role: "user", content: prompt.value };
+  messages.value.push(userMsg);
+  const currentPrompt = prompt.value;
+  prompt.value = "";
+
+  const assistantMsg: ChatMessage = { role: "assistant", content: "" };
+  messages.value.push(assistantMsg);
+
+  const controller = new AbortController();
+  abortController.value = controller;
+  streaming.value = true;
+  liveMetrics.value = {};
+
+  try {
+    for await (const chunk of streamChat(
+      config.serverUrl,
+      config.apiKey,
+      config.defaultModel || "llama3.2",
+      [{ role: "user", content: currentPrompt }],
+      { signal: controller.signal }
+    )) {
+      if (chunk.done) {
+        assistantMsg.metrics = chunk.metrics as RunMetrics;
+        liveMetrics.value = chunk.metrics;
+        break;
+      }
+      assistantMsg.content += chunk.content;
+      if (chunk.metrics.ttft) {
+        liveMetrics.value = { ...chunk.metrics };
+      }
+    }
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "AbortError") {
+      assistantMsg.content += "\n\n[Stopped]";
+    } else {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      assistantMsg.content = `\n\n**Error:** ${message}`;
+    }
+  } finally {
+    streaming.value = false;
+    abortController.value = null;
+  }
+}
+
+function stop() {
+  abortController.value?.abort();
+}
+
+function clear() {
+  messages.value = [];
+  liveMetrics.value = {};
+}
+</script>
+
+<template>
+  <div class="playground">
+    <div class="playground-header">
+      <h1 class="page-title">Playground</h1>
+      <button v-if="messages.length" class="btn btn-ghost" @click="clear">Clear</button>
+    </div>
+
+    <div class="chat-area" v-if="messages.length">
+      <div
+        v-for="(msg, i) in messages"
+        :key="i"
+        class="message"
+        :class="msg.role"
+      >
+        <div class="message-label">{{ msg.role }}</div>
+        <div class="message-content">{{ msg.content }}</div>
+        <div v-if="msg.metrics" class="message-metrics">
+          <span class="metric">TTFT {{ formatMs(msg.metrics.ttft) }}</span>
+          <span class="divider">·</span>
+          <span class="metric">{{ msg.metrics.tps.toFixed(1) }} tok/s</span>
+          <span class="divider">·</span>
+          <span class="metric">{{ msg.metrics.completionTokens }} tokens</span>
+        </div>
+      </div>
+    </div>
+
+    <div v-else class="empty-state">
+      <p>Connect to a server and send a prompt to see live metrics.</p>
+    </div>
+
+    <div v-if="liveMetrics.ttft" class="metrics-bar">
+      <div class="metric-item">
+        <span class="metric-label">TTFT</span>
+        <span class="metric-value">{{ formatMs(liveMetrics.ttft) }}</span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label">TPS</span>
+        <span class="metric-value">{{ (liveMetrics.tps || 0).toFixed(1) }}</span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label">TPOT</span>
+        <span class="metric-value">{{ (liveMetrics.tpot || 0).toFixed(1) }}ms</span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label">Tokens</span>
+        <span class="metric-value">{{ liveMetrics.completionTokens || 0 }}</span>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <textarea
+        v-model="prompt"
+        placeholder="Send a message..."
+        rows="3"
+        @keydown.enter.ctrl="send"
+        :disabled="streaming"
+        class="prompt-input"
+      />
+      <div class="input-actions">
+        <button
+          v-if="streaming"
+          class="btn btn-danger"
+          @click="stop"
+        >
+          Stop
+        </button>
+        <button
+          v-else
+          class="btn btn-primary"
+          @click="send"
+          :disabled="!prompt.trim()"
+        >
+          Send
+        </button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.playground {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.playground-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.chat-area {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.message {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.message.user {
+  border-left: 2px solid var(--primary);
+}
+
+.message.assistant {
+  border-left: 2px solid var(--accent);
+}
+
+.message-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: var(--space-2);
+}
+
+.message-content {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.6;
+}
+
+.message-metrics {
+  margin-top: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+
+.metric, .divider {
+  display: inline;
+}
+
+.metrics-bar {
+  display: flex;
+  gap: var(--space-6);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+}
+
+.metric-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.metric-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.metric-value {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  text-align: center;
+}
+
+.input-area {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.prompt-input {
+  width: 100%;
+  padding: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  resize: vertical;
+  min-height: 60px;
+}
+
+.prompt-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.prompt-input:disabled {
+  opacity: 0.5;
+}
+
+.input-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.btn {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition-fast), opacity var(--transition-fast);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: white;
+}
+
+.btn-danger:hover {
+  opacity: 0.9;
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+.btn-ghost:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+</style>

@@ -1,0 +1,7 @@
+{
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "files.associations": {
+    "*.css": "css"
+  },
+  "css.customData": [".vscode/css-custom-data.json"]
+}
