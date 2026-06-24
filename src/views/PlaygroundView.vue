@@ -143,6 +143,18 @@ function canSave(): boolean {
     <!-- Top bar: model, thinking toggle, actions -->
     <div class="top-bar">
       <div class="left-group">
+        <select
+          class="model-select provider-select"
+          :value="config.serverUrl"
+          @change="(e) => {
+            const url = (e.target as HTMLSelectElement).value;
+            const p = config.providers.find((pr) => pr.url === url);
+            if (p) { config.selectProvider(p.url, p.apiKey); loadModels(); }
+          }"
+        >
+          <option value="" disabled>Provider</option>
+          <option v-for="p in config.providers" :key="p.url" :value="p.url" :selected="p.url === config.serverUrl">{{ p.label }}</option>
+        </select>
         <select v-model="selectedModel" class="model-select" :disabled="streaming">
           <option value="" disabled>Model…</option>
           <option v-for="m in models" :key="m" :value="m">{{ m }}</option>
