@@ -9,42 +9,45 @@ const props = defineProps<{
 const containerRef = ref<HTMLElement | null>(null);
 let chart: import("echarts").ECharts | null = null;
 const tpsHistory = ref<{ time: number; tps: number }[]>([]);
+let initStarted = false;
 
 function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
 }
 
 async function initChart() {
-  if (!containerRef.value) return;
-  const { init } = await import("echarts");
-  chart = init(containerRef.value, undefined, { renderer: "canvas" });
+  if (initStarted || !containerRef.value) return;
+  initStarted = true;
+  try {
+    const { init } = await import("echarts");
+    chart = init(containerRef.value, undefined, { renderer: "canvas" });
 
-  const primary = cssVar("--primary");
-  const muted = cssVar("--muted");
-  const border = cssVar("--border");
+    const primary = cssVar("--primary");
+    const muted = cssVar("--muted");
+    const border = cssVar("--border");
 
-  chart.setOption({
-    grid: { left: 55, right: 20, top: 10, bottom: 30 },
-    xAxis: {
-      type: "value",
-      name: "Elapsed time (seconds)",
-      nameLocation: "center",
-      nameGap: 20,
-      nameTextStyle: { color: muted, fontSize: 11, fontWeight: 500 },
-      axisLine: { lineStyle: { color: border } },
-      axisLabel: { color: muted, fontSize: 10 },
-      splitLine: { lineStyle: { color: border, opacity: 0.3 } },
-    },
-    yAxis: {
-      type: "value",
-      name: "Tokens / sec",
-      nameTextStyle: { color: muted, fontSize: 11, fontWeight: 500 },
-      axisLine: { lineStyle: { color: border } },
-      axisLabel: { color: muted, fontSize: 10 },
-      splitLine: { lineStyle: { color: border, opacity: 0.3 } },
-    },
-    series: [
-      {
+    chart.setOption({
+      grid: { left: 55, right: 20, top: 10, bottom: 30 },
+      xAxis: {
+        type: "value",
+        name: "Elapsed (seconds)",
+        nameLocation: "center",
+        nameGap: 20,
+        nameTextStyle: { color: muted, fontSize: 11, fontWeight: 500 },
+        axisLine: { lineStyle: { color: border } },
+        axisLabel: { color: muted, fontSize: 10 },
+        splitLine: { lineStyle: { color: border, opacity: 0.3 } },
+      },
+      yAxis: {
+        type: "value",
+        name: "Tokens/s",
+        nameTextStyle: { color: muted, fontSize: 11, fontWeight: 500 },
+        min: 0,
+        axisLine: { lineStyle: { color: border } },
+        axisLabel: { color: muted, fontSize: 10 },
+        splitLine: { lineStyle: { color: border, opacity: 0.3 } },
+      },
+      series: [{
         type: "line",
         data: [],
         smooth: true,
@@ -60,24 +63,30 @@ async function initChart() {
             ],
           },
         },
-      },
-    ],
-    animation: false,
-  });
+      }],
+      animation: false,
+    });
+
+    // Flush any data that arrived before chart was ready
+    if (tpsHistory.value.length) {
+      chart.setOption({ series: [{ data: tpsHistory.value.map((p) => [p.time, p.tps]) }] });
+    }
+  } catch (e) {
+    console.warn("Chart init failed:", e);
+  }
 }
 
 function updateChart() {
-  if (!chart) return;
   const tps = props.metrics.tps;
   const elapsed = props.metrics.duration ?? 0;
 
   if (tps && elapsed > 0) {
-    tpsHistory.value.push({ time: elapsed / 1000, tps });
+    tpsHistory.value.push({ time: +(elapsed / 1000).toFixed(2), tps: +(tps).toFixed(1) });
   }
 
-  chart.setOption({
-    series: [{ data: tpsHistory.value.map((p) => [Number(p.time.toFixed(2)), Number(p.tps.toFixed(1))]) }],
-  });
+  if (chart) {
+    chart.setOption({ series: [{ data: tpsHistory.value.map((p) => [p.time, p.tps]) }] });
+  }
 }
 
 function reset() {
@@ -105,6 +114,7 @@ onUnmounted(() => {
     <div class="panel-header">
       <span class="panel-title">Speed Over Time</span>
       <span class="panel-hint">TPS (tokens per second) during generation</span>
+      <span v-if="tpsHistory.length" class="data-count">{{ tpsHistory.length }} points</span>
     </div>
     <div ref="containerRef" class="chart-area"></div>
   </div>
@@ -137,6 +147,13 @@ onUnmounted(() => {
   font-size: 11px;
   color: var(--muted);
   opacity: 0.7;
+}
+
+.data-count {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--muted);
+  font-family: var(--font-mono);
 }
 
 .chart-area {

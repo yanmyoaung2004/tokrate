@@ -77,9 +77,7 @@ async function send() {
         break;
       }
       assistantMsg.content += chunk.content;
-      if (chunk.metrics.ttft) {
-        liveMetrics.value = { ...chunk.metrics };
-      }
+      liveMetrics.value = { ...chunk.metrics };
     }
   } catch (err: unknown) {
     if (err instanceof Error && err.name === "AbortError") {
