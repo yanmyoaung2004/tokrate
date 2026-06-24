@@ -9,15 +9,13 @@ const props = defineProps<{
 const containerRef = ref<HTMLElement | null>(null);
 let chart: import("echarts").ECharts | null = null;
 const tpsHistory = ref<{ time: number; tps: number }[]>([]);
-let initStarted = false;
 
 function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
 }
 
 async function initChart() {
-  if (initStarted || !containerRef.value) return;
-  initStarted = true;
+  if (!containerRef.value) return;
   try {
     const { init } = await import("echarts");
     chart = init(containerRef.value, undefined, { renderer: "canvas" });
