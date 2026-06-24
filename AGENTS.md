@@ -2,7 +2,16 @@
 
 ## Project state
 
-Phase 1 (Foundation) complete. Scaffolded Tauri v2 + Vue 3 + Vite project with design system.
+All 5 phases complete. Tauri v2 + Vue 3 + Vite project with:
+
+- **Playground** — streaming chat with live ECharts TPS chart, metrics bar, save to history
+- **Compare** — multi-config runner and quantization tuner with side-by-side results
+- **History** — saved runs with search, detail view, publish to leaderboard
+- **Leaderboard** — sortable/filterable community results browser
+- **Settings** — server URL, API key, model selection, theme toggle, connection test
+- **Design system** — dark-first theme, CSS custom properties, system fonts, toast notifications
+
+Not yet implemented: Rust backend compilation (requires MSVC), tests, CI/CD.
 
 ## What this project is
 
