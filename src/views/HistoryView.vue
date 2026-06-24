@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from "vue";
 import { useHistoryStore } from "@/stores/history";
+import { useToastStore } from "@/stores/toast";
 import type { BenchmarkRun } from "@/types";
 import PublishDialog from "@/components/PublishDialog.vue";
 
 const history = useHistoryStore();
+const toast = useToastStore();
 const selectedRun = ref<BenchmarkRun | null>(null);
 const publishRun = ref<BenchmarkRun | null>(null);
 const filter = ref("");
@@ -28,6 +30,18 @@ function formatDate(ts: number): string {
   return new Date(ts).toLocaleString();
 }
 
+async function handleDelete(id: string) {
+  await history.removeRun(id);
+  if (selectedRun.value?.id === id) selectedRun.value = null;
+  toast.add("Run deleted", "info");
+}
+
+async function handleClearAll() {
+  await history.clearAll();
+  selectedRun.value = null;
+  toast.add("All runs cleared", "info");
+}
+
 function formatMs(ms: number): string {
   if (ms < 1000) return `${ms.toFixed(0)}ms`;
   return `${(ms / 1000).toFixed(2)}s`;
@@ -47,7 +61,7 @@ function formatMs(ms: number): string {
       <button
         v-if="history.runs.length"
         class="btn btn-ghost btn-sm"
-        @click="history.clearAll()"
+        @click="handleClearAll"
       >
         Clear All
       </button>
@@ -90,7 +104,7 @@ function formatMs(ms: number): string {
           <h2>{{ selectedRun.model }}</h2>
           <div class="detail-actions">
             <button class="btn btn-secondary btn-sm" @click="publishRun = selectedRun">Publish</button>
-            <button class="btn btn-ghost btn-sm" @click="history.removeRun(selectedRun.id)">Delete</button>
+            <button class="btn btn-ghost btn-sm" @click="handleDelete(selectedRun.id)">Delete</button>
           </div>
         </div>
         <div class="detail-meta">

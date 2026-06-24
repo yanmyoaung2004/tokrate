@@ -3,6 +3,7 @@ import { onMounted } from "vue";
 import { useConfigStore } from "@/stores/config";
 import Sidebar from "@/components/Sidebar.vue";
 import ConnectionStatus from "@/components/ConnectionStatus.vue";
+import ToastContainer from "@/components/ToastContainer.vue";
 
 const config = useConfigStore();
 
@@ -26,6 +27,7 @@ onMounted(async () => {
         <router-view />
       </main>
     </div>
+    <ToastContainer />
   </div>
 </template>
 

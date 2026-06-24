@@ -2,6 +2,7 @@
 import { ref } from "vue";
 import { useConfigStore } from "@/stores/config";
 import { useHistoryStore } from "@/stores/history";
+import { useToastStore } from "@/stores/toast";
 import { streamChat } from "@/api/client";
 import type { ChatMessage, RunMetrics, BenchmarkRun } from "@/types";
 import MetricsBar from "@/components/MetricsBar.vue";
@@ -9,6 +10,7 @@ import SpeedChart from "@/components/SpeedChart.vue";
 
 const config = useConfigStore();
 const history = useHistoryStore();
+const toast = useToastStore();
 const prompt = ref("");
 const messages = ref<ChatMessage[]>([]);
 const streaming = ref(false);
@@ -40,6 +42,7 @@ async function saveRun() {
     totalTokens: assistantMsg.metrics.totalTokens,
   };
   await history.addRun(run);
+  toast.add("Run saved to History", "success");
 }
 
 function canSave(): boolean {
@@ -86,9 +89,11 @@ async function send() {
   } catch (err: unknown) {
     if (err instanceof Error && err.name === "AbortError") {
       assistantMsg.content += "\n\n[Stopped]";
+      toast.add("Generation stopped", "info");
     } else {
       const message = err instanceof Error ? err.message : "Unknown error";
       assistantMsg.content = `\n\n**Error:** ${message}`;
+      toast.add(`Error: ${message}`, "error");
     }
   } finally {
     streaming.value = false;
