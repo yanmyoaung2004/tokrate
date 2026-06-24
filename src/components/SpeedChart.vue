@@ -90,7 +90,10 @@ function reset() {
   }
 }
 
-watch(() => [props.thinkingData?.length, props.answeringData?.length], updateChart);
+watch(
+  () => ({ t: props.thinkingData?.length, a: props.answeringData?.length }),
+  updateChart,
+);
 
 defineExpose({ reset });
 
