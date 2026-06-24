@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
 import { useConfigStore } from "@/stores/config";
 import { useHistoryStore } from "@/stores/history";
 import { useToastStore } from "@/stores/toast";
-import { streamChat } from "@/api/client";
+import { streamChat, fetchModels } from "@/api/client";
 import type { ChatMessage, RunMetrics, BenchmarkRun } from "@/types";
 import MetricsBar from "@/components/MetricsBar.vue";
 import SpeedChart from "@/components/SpeedChart.vue";
@@ -17,6 +17,30 @@ const streaming = ref(false);
 const liveMetrics = ref<Partial<RunMetrics>>({});
 const abortController = ref<AbortController | null>(null);
 const speedChartRef = ref<InstanceType<typeof SpeedChart> | null>(null);
+const models = ref<string[]>([]);
+const selectedModel = ref(config.defaultModel || "");
+const loadingModels = ref(false);
+
+onMounted(async () => {
+  if (config.serverUrl) {
+    loadingModels.value = true;
+    models.value = await fetchModels(config.serverUrl, config.apiKey);
+    loadingModels.value = false;
+    if (!selectedModel.value && models.value.length) {
+      selectedModel.value = models.value[0];
+    }
+  }
+});
+
+async function refreshModels() {
+  loadingModels.value = true;
+  models.value = await fetchModels(config.serverUrl, config.apiKey);
+  loadingModels.value = false;
+  if (!selectedModel.value && models.value.length) {
+    selectedModel.value = models.value[0];
+  }
+}
+
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
@@ -72,7 +96,7 @@ async function send() {
     for await (const chunk of streamChat(
       config.serverUrl,
       config.apiKey,
-      config.defaultModel || "llama3.2",
+      config.defaultModel || selectedModel.value || "llama3.2",
       [{ role: "user", content: currentPrompt }],
       { signal: controller.signal }
     )) {
@@ -116,9 +140,18 @@ function clear() {
   <div class="playground">
     <div class="playground-header">
       <h1 class="page-title">Playground</h1>
-      <div class="header-actions">
+      <div class="playground-controls">
+        <div class="model-selector">
+          <select v-model="selectedModel" class="model-select" :disabled="streaming">
+            <option value="" disabled>Select model</option>
+            <option v-for="m in models" :key="m" :value="m">{{ m }}</option>
+          </select>
+          <button class="btn-icon" @click="refreshModels" :disabled="loadingModels" title="Refresh models">
+            ↻
+          </button>
+        </div>
         <button v-if="canSave() && !streaming" class="btn btn-secondary btn-sm" @click="saveRun">Save Run</button>
-        <button v-if="liveMetrics.ttft && !streaming" class="btn btn-ghost btn-sm" @click="clear">Clear</button>
+        <button v-if="messages.length && !streaming" class="btn btn-ghost btn-sm" @click="clear">Clear</button>
       </div>
     </div>
 
@@ -213,6 +246,38 @@ function clear() {
 .header-actions {
   display: flex;
   gap: var(--space-2);
+}
+
+.playground-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.model-selector {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.model-select {
+  padding: var(--space-1) var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  max-width: 200px;
+}
+
+.model-select:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.model-select:disabled {
+  opacity: 0.5;
 }
 
 .chat-area {
@@ -340,6 +405,25 @@ function clear() {
 
 .btn-danger:hover {
   opacity: 0.9;
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px 4px;
+  line-height: 1;
+}
+
+.btn-icon:hover {
+  color: var(--ink);
+}
+
+.btn-icon:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .btn-secondary {
