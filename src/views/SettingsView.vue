@@ -1,21 +1,39 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import { useConfigStore } from "@/stores/config";
+import { useToastStore } from "@/stores/toast";
 import { testConnection, fetchModels } from "@/api/client";
 
 const config = useConfigStore();
+const toast = useToastStore();
 const connectionOk = ref<boolean | null>(null);
+const connectionError = ref("");
 const testing = ref(false);
 const models = ref<string[]>([]);
 const loadingModels = ref(false);
 
 async function testConn() {
   testing.value = true;
-  connectionOk.value = await testConnection(config.serverUrl, config.apiKey);
-  testing.value = false;
-  if (connectionOk.value) {
-    await loadModels();
+  connectionOk.value = null;
+  connectionError.value = "";
+  try {
+    connectionOk.value = await testConnection(config.serverUrl, config.apiKey);
+    if (connectionOk.value) {
+      toast.add("Connected successfully", "success");
+      await loadModels();
+    } else {
+      connectionError.value = "Server did not respond. Make sure the server is running and the URL is correct.";
+    }
+  } catch (err: unknown) {
+    connectionOk.value = false;
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    if (msg.includes("CORS") || msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
+      connectionError.value = "CORS error: Browser security blocks requests to remote servers. Use Tauri desktop mode or a local server.";
+    } else {
+      connectionError.value = msg;
+    }
   }
+  testing.value = false;
 }
 
 async function loadModels() {
@@ -100,6 +118,7 @@ watch(() => config.serverUrl, () => { connectionOk.value = null; });
         <span v-if="connectionOk === true" class="status-ok">Connected</span>
         <span v-else-if="connectionOk === false" class="status-err">Connection failed</span>
       </div>
+      <p v-if="connectionError" class="error-msg">{{ connectionError }}</p>
     </div>
 
     <div class="settings-section">

@@ -1,14 +1,85 @@
 import type { StreamChunk, RunMetrics } from "@/types";
 
+function normalizeUrl(base: string): string {
+  return base.replace(/\/+$/, "");
+}
+
+async function fetchWithCors(
+  url: string,
+  options?: RequestInit & { apiKey?: string }
+): Promise<Response> {
+  const headers: Record<string, string> = {
+    ...(options?.apiKey ? { Authorization: `Bearer ${options.apiKey}` } : {}),
+    ...(options?.headers as Record<string, string>),
+  };
+
+  if (options?.method === "POST") {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const res = await fetch(url, {
+    ...options,
+    headers,
+  });
+
+  return res;
+}
+
 export async function testConnection(serverUrl: string, apiKey: string): Promise<boolean> {
+  const base = normalizeUrl(serverUrl);
+
+  // Try OpenAI-compatible /v1/models first (works with vLLM, SGLang, LM Studio, TGI)
   try {
-    const res = await fetch(`${serverUrl}/api/tags`, {
+    const res = await fetchWithCors(`${base}/v1/models`, {
       signal: AbortSignal.timeout(5000),
-      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
+      apiKey,
+    });
+    if (res.ok) return true;
+  } catch {
+    // Fall through
+  }
+
+  // Fallback to Ollama-specific /api/tags
+  try {
+    const res = await fetchWithCors(`${base}/api/tags`, {
+      signal: AbortSignal.timeout(5000),
+      apiKey,
     });
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+export async function fetchModels(serverUrl: string, apiKey: string): Promise<string[]> {
+  const base = normalizeUrl(serverUrl);
+
+  // Try OpenAI-compatible endpoint first
+  try {
+    const res = await fetchWithCors(`${base}/v1/models`, {
+      signal: AbortSignal.timeout(5000),
+      apiKey,
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const models = data.data || [];
+      return models.map((m: { id: string }) => m.id);
+    }
+  } catch {
+    // Fall through
+  }
+
+  // Fallback to Ollama /api/tags
+  try {
+    const res = await fetchWithCors(`${base}/api/tags`, {
+      signal: AbortSignal.timeout(5000),
+      apiKey,
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.models || []).map((m: { name: string }) => m.name);
+  } catch {
+    return [];
   }
 }
 
@@ -19,16 +90,19 @@ export async function* streamChat(
   messages: { role: string; content: string }[],
   options?: { temperature?: number; maxTokens?: number; signal?: AbortSignal }
 ): AsyncGenerator<StreamChunk> {
+  const base = normalizeUrl(serverUrl);
   const startTime = performance.now();
   let firstToken = true;
   let completionTokens = 0;
 
-  const res = await fetch(`${serverUrl}/v1/chat/completions`, {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
+  const res = await fetch(`${base}/v1/chat/completions`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-    },
+    headers,
     body: JSON.stringify({
       model,
       messages,
@@ -121,19 +195,5 @@ export async function* streamChat(
         // Skip malformed JSON
       }
     }
-  }
-}
-
-export async function fetchModels(serverUrl: string, apiKey: string): Promise<string[]> {
-  try {
-    const res = await fetch(`${serverUrl}/api/tags`, {
-      signal: AbortSignal.timeout(5000),
-      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.models || []).map((m: { name: string }) => m.name);
-  } catch {
-    return [];
   }
 }
