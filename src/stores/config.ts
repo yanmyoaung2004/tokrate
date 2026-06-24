@@ -16,9 +16,7 @@ export interface Provider {
 }
 
 export const DEFAULT_PROVIDERS: Provider[] = [
-  { label: "Ollama (default)", url: "http://localhost:11434", apiKey: "" },
-  { label: "Ollama (remote)", url: "http://localhost:11434", apiKey: "" },
-  { label: "OpenAI compatible", url: "http://localhost:8000", apiKey: "" },
+  { label: "Ollama (localhost)", url: "http://localhost:11434", apiKey: "" },
 ];
 
 export const useConfigStore = defineStore("config", () => {

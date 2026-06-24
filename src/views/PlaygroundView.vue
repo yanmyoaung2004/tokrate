@@ -27,11 +27,15 @@ onMounted(async () => {
 
 async function loadModels() {
   loadingModels.value = true;
-  models.value = await fetchModels(config.serverUrl, config.apiKey);
-  loadingModels.value = false;
-  if (!selectedModel.value && models.value.length) {
-    selectedModel.value = models.value[0];
+  try {
+    models.value = await fetchModels(config.serverUrl, config.apiKey);
+    if (!selectedModel.value && models.value.length) {
+      selectedModel.value = models.value[0];
+    }
+  } catch {
+    // Server not reachable — silent
   }
+  loadingModels.value = false;
 }
 
 function switchProvider(url: string, apiKey: string) {
