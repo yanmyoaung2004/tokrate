@@ -186,7 +186,7 @@ export async function* streamChat(
         const finishReason = choice?.finish_reason;
         const usage = parsed.usage;
 
-        if (delta) completionTokens++;
+        if (delta || reasoningContent) completionTokens++;
 
         const now = performance.now();
         const elapsed = now - startTime;
