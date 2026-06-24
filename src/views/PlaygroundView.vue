@@ -4,7 +4,7 @@ import { useConfigStore } from "@/stores/config";
 import { useHistoryStore } from "@/stores/history";
 import { useToastStore } from "@/stores/toast";
 import { streamChat, fetchModels } from "@/api/client";
-import type { ChatMessage, RunMetrics, BenchmarkRun } from "@/types";
+import type { ChatMessage, RunMetrics } from "@/types";
 import MetricsBar from "@/components/MetricsBar.vue";
 import SpeedChart from "@/components/SpeedChart.vue";
 
@@ -15,38 +15,29 @@ const prompt = ref("");
 const messages = ref<ChatMessage[]>([]);
 const streaming = ref(false);
 const liveMetrics = ref<Partial<RunMetrics>>({});
-const showCharts = ref(false);
-const showReasoning = ref(true);
-const hasReasoning = computed(() => messages.value.some((m) => m.reasoning));
-const thinkingEnabled = ref(true);
-const thinkingMetrics = ref({ tokens: 0, time: 0, tps: 0 });
-const answeringMetrics = ref({ tokens: 0, time: 0, tps: 0 });
 const abortController = ref<AbortController | null>(null);
 const speedChartRef = ref<InstanceType<typeof SpeedChart> | null>(null);
 const models = ref<string[]>([]);
 const selectedModel = ref(config.defaultModel || "");
 const loadingModels = ref(false);
+const showCharts = ref(false);
+const showReasoning = ref(true);
+const thinkingEnabled = ref(true);
+const thinkingTps = ref<number>();
+const answeringTps = ref<number>();
+const thinkingData = ref<{ time: number; tps: number }[]>([]);
+const answeringData = ref<{ time: number; tps: number }[]>([]);
+const currentPhase = ref<"thinking" | "answering">("thinking");
+const hasReasoning = computed(() => messages.value.some((m) => m.reasoning));
 
-onMounted(async () => {
-  loadModels();
-});
+onMounted(() => { loadModels(); });
 
 async function loadModels() {
   loadingModels.value = true;
-  try {
-    models.value = await fetchModels(config.serverUrl, config.apiKey);
-    if (!selectedModel.value && models.value.length) {
-      selectedModel.value = models.value[0];
-    }
-  } catch {
-    // Server not reachable — silent
-  }
+  try { models.value = await fetchModels(config.serverUrl, config.apiKey);
+    if (!selectedModel.value && models.value.length) selectedModel.value = models.value[0];
+  } catch { /* silent */ }
   loadingModels.value = false;
-}
-
-function switchProvider(url: string, apiKey: string) {
-  config.selectProvider(url, apiKey);
-  loadModels();
 }
 
 function generateId(): string {
@@ -55,36 +46,30 @@ function generateId(): string {
 
 async function send() {
   if (!prompt.value.trim() || streaming.value) return;
-
   const userMsg: ChatMessage = { role: "user", content: prompt.value };
   messages.value.push(userMsg);
   const currentPrompt = prompt.value;
   prompt.value = "";
-
   const assistantMsg: ChatMessage = { role: "assistant", content: "", reasoning: "" };
   messages.value.push(assistantMsg);
-
   const controller = new AbortController();
   abortController.value = controller;
   streaming.value = true;
   liveMetrics.value = {};
   showCharts.value = false;
-  thinkingMetrics.value = { tokens: 0, time: 0, tps: 0 };
-  answeringMetrics.value = { tokens: 0, time: 0, tps: 0 };
+  thinkingData.value = [];
+  answeringData.value = [];
+  thinkingTps.value = undefined;
+  answeringTps.value = undefined;
+  currentPhase.value = "thinking";
 
   try {
     for await (const chunk of streamChat(
-      config.serverUrl,
-      config.apiKey,
+      config.serverUrl, config.apiKey,
       selectedModel.value || config.defaultModel || "llama3.2",
       [{ role: "user", content: currentPrompt }],
       { signal: controller.signal, thinking: thinkingEnabled.value }
     )) {
-      if (chunk.done) {
-        assistantMsg.metrics = chunk.metrics as RunMetrics;
-        liveMetrics.value = chunk.metrics;
-        break;
-      }
       assistantMsg.content += chunk.content;
       if (chunk.reasoningContent) {
         assistantMsg.reasoning = (assistantMsg.reasoning || "") + chunk.reasoningContent;
@@ -92,16 +77,18 @@ async function send() {
       liveMetrics.value = { ...chunk.metrics };
       if (chunk.metrics.ttft) showCharts.value = true;
 
-      // Phase tracking
-      const dur = chunk.metrics.duration || 0;
-      if (chunk.phase === "thinking") {
-        thinkingMetrics.value.tokens++;
-        thinkingMetrics.value.time = dur;
-        thinkingMetrics.value.tps = thinkingMetrics.value.tokens / (dur / 1000);
-      } else if (chunk.phase === "answering") {
-        answeringMetrics.value.tokens++;
-        answeringMetrics.value.time = dur;
-        answeringMetrics.value.tps = answeringMetrics.value.tokens / (dur / 1000);
+      const elapsed = (chunk.metrics.duration ?? 0) / 1000;
+      const tps = chunk.metrics.tps ?? 0;
+      if (elapsed > 0 && tps > 0) {
+        if (chunk.phase === "thinking") {
+          thinkingData.value.push({ time: +elapsed.toFixed(2), tps: +tps.toFixed(1) });
+          thinkingTps.value = tps;
+          currentPhase.value = "thinking";
+        } else {
+          answeringData.value.push({ time: +elapsed.toFixed(2), tps: +tps.toFixed(1) });
+          answeringTps.value = tps;
+          currentPhase.value = "answering";
+        }
       }
     }
   } catch (err: unknown) {
@@ -110,7 +97,7 @@ async function send() {
       toast.add("Generation stopped", "info");
     } else {
       const message = err instanceof Error ? err.message : "Unknown error";
-      assistantMsg.content = `\n\n**Error:** ${message}`;
+      assistantMsg.content = `\n\nError: ${message}`;
       toast.add(`Error: ${message}`, "error");
     }
   } finally {
@@ -119,94 +106,62 @@ async function send() {
   }
 }
 
-function stop() {
-  abortController.value?.abort();
-}
+function stop() { abortController.value?.abort(); }
 
 function clear() {
-  messages.value = [];
-  liveMetrics.value = {};
-  showCharts.value = false;
+  messages.value = []; liveMetrics.value = {}; showCharts.value = false;
+  thinkingData.value = []; answeringData.value = [];
+  thinkingTps.value = undefined; answeringTps.value = undefined;
   speedChartRef.value?.reset();
 }
 
 async function saveRun() {
   const m = messages.value;
-  const userMsg = m.find((msg) => msg.role === "user");
-  const assistantMsg = m.find((msg) => msg.role === "assistant" && msg.metrics);
+  const userMsg = m.find((r) => r.role === "user");
+  const assistantMsg = m.find((r) => r.role === "assistant" && r.metrics);
   if (!userMsg || !assistantMsg?.metrics) return;
-
-  const run: BenchmarkRun = {
-    id: generateId(),
-    timestamp: Date.now(),
-    engine: config.serverUrl,
-    model: selectedModel.value || config.defaultModel || "unknown",
-    prompt: userMsg.content,
-    response: assistantMsg.content,
-    tps: assistantMsg.metrics.tps,
-    ttft: assistantMsg.metrics.ttft,
+  await history.addRun({
+    id: generateId(), timestamp: Date.now(),
+    engine: config.serverUrl, model: selectedModel.value || config.defaultModel || "unknown",
+    prompt: userMsg.content, response: assistantMsg.content,
+    tps: assistantMsg.metrics.tps, ttft: assistantMsg.metrics.ttft,
     tpot: assistantMsg.metrics.tpot,
     promptTokens: assistantMsg.metrics.promptTokens,
     completionTokens: assistantMsg.metrics.completionTokens,
     totalTokens: assistantMsg.metrics.totalTokens,
-  };
-  await history.addRun(run);
+  });
   toast.add("Run saved to History", "success");
 }
 
 function canSave(): boolean {
-  const assistantMsg = messages.value.find(
-    (msg) => msg.role === "assistant" && msg.metrics
-  );
-  return !!assistantMsg;
+  return !!messages.value.find((m) => m.role === "assistant" && m.metrics);
 }
 </script>
 
 <template>
   <div class="playground">
+    <!-- Top bar: model, thinking toggle, actions -->
     <div class="top-bar">
-      <div class="model-picker">
+      <div class="left-group">
         <select v-model="selectedModel" class="model-select" :disabled="streaming">
-          <option value="" disabled>Select a model…</option>
+          <option value="" disabled>Model…</option>
           <option v-for="m in models" :key="m" :value="m">{{ m }}</option>
         </select>
-        <button class="refresh-btn" @click="loadModels" :disabled="loadingModels" title="Refresh models">↻</button>
-        <span v-if="loadingModels" class="loading-hint">loading…</span>
-        <span class="separator">|</span>
+        <button class="icon-btn" @click="loadModels" :disabled="loadingModels" title="Refresh models">↻</button>
         <button
-          class="thinking-toggle"
+          class="toggle thin"
           :class="{ on: thinkingEnabled }"
           @click="thinkingEnabled = !thinkingEnabled"
-          :title="thinkingEnabled ? 'Thinking mode on (slower, deeper reasoning)' : 'Thinking mode off (faster)'"
         >
-          {{ thinkingEnabled ? "🧠 Think" : "⚡ Fast" }}
+          {{ thinkingEnabled ? "🧠" : "⚡" }}
         </button>
-        <select
-          class="model-select provider-select"
-          :value="config.serverUrl"
-          @change="(e) => {
-            const idx = (e.target as HTMLSelectElement).selectedIndex - 1;
-            if (idx >= 0 && idx < config.providers.length) {
-              const p = config.providers[idx];
-              switchProvider(p.url, p.apiKey);
-            }
-          }"
-        >
-          <option value="" disabled>Provider…</option>
-          <option
-            v-for="p in config.providers"
-            :key="p.url"
-            :value="p.url"
-            :selected="p.url === config.serverUrl"
-          >{{ p.label }}</option>
-        </select>
       </div>
-      <div class="action-btns" v-if="messages.length">
-        <button v-if="canSave() && !streaming" class="btn btn-sm btn-outline" @click="saveRun">Save</button>
-        <button v-if="hasReasoning" class="btn btn-sm btn-ghost" @click="showReasoning = !showReasoning">
-          {{ showReasoning ? "Hide" : "Show" }} reasoning
+      <div class="right-group">
+        <button v-if="canSave() && !streaming" class="btn btn-sm" @click="saveRun">Save</button>
+        <button v-if="hasReasoning" class="btn btn-sm ghost" @click="showReasoning = !showReasoning">
+          {{ showReasoning ? "Hide" : "Show" }} thinking
         </button>
-        <button v-if="!streaming" class="btn btn-sm btn-ghost" @click="clear">Clear</button>
+        <button v-if="messages.length && !streaming" class="btn btn-sm ghost" @click="clear">Clear</button>
       </div>
     </div>
 
@@ -214,492 +169,195 @@ function canSave(): boolean {
       v-if="showCharts"
       ref="speedChartRef"
       :metrics="liveMetrics"
+      :thinking-data="thinkingData"
+      :answering-data="answeringData"
+      :phase="currentPhase"
     />
 
     <MetricsBar
       v-if="showCharts"
       :metrics="liveMetrics"
       :streaming="streaming"
+      :thinking-tps="thinkingTps"
+      :answering-tps="answeringTps"
     />
 
-    <div v-if="showCharts && (thinkingMetrics.tokens || answeringMetrics.tokens)" class="phase-metrics">
-      <div v-if="thinkingMetrics.tokens" class="phase-block thinking">
-        <span class="phase-label">🧠 Thinking</span>
-        <span class="phase-speed">{{ thinkingMetrics.tps.toFixed(1) }} tok/s</span>
-        <span class="phase-tokens">{{ thinkingMetrics.tokens }} tokens</span>
-        <span class="phase-time">in {{ (thinkingMetrics.time / 1000).toFixed(1) }}s</span>
-      </div>
-      <div v-if="answeringMetrics.tokens" class="phase-block answering">
-        <span class="phase-label">💬 Answering</span>
-        <span class="phase-speed">{{ answeringMetrics.tps.toFixed(1) }} tok/s</span>
-        <span class="phase-tokens">{{ answeringMetrics.tokens }} tokens</span>
-        <span class="phase-time">in {{ (answeringMetrics.time / 1000).toFixed(1) }}s</span>
-      </div>
-    </div>
-
+    <!-- Chat -->
     <div class="chat-area">
       <div v-if="!messages.length" class="empty">
-        <div class="empty-icon">▷</div>
         <p class="empty-title">Ready</p>
-        <p class="empty-hint">Select a model, type a message, and press send to begin.</p>
+        <p class="empty-hint">Type a message and press Enter to begin.</p>
       </div>
 
-      <div
-        v-for="(msg, i) in messages"
-        :key="i"
-        class="msg"
-        :class="msg.role"
-      >
+      <div v-for="(msg, i) in messages" :key="i" class="msg" :class="msg.role">
         <div class="msg-avatar">{{ msg.role === "user" ? "U" : "A" }}</div>
         <div class="msg-body">
           <div class="msg-label">{{ msg.role === "user" ? "You" : "Assistant" }}</div>
-          <details v-if="msg.reasoning && showReasoning" class="reasoning-block" open>
-            <summary class="reasoning-summary">Reasoning</summary>
-            <div class="reasoning-content">{{ msg.reasoning }}</div>
+
+          <div v-if="msg.reasoning && streaming" class="thinking-live">
+            <div class="thinking-header">Thinking…</div>
+            <div class="thinking-text">{{ msg.reasoning }}</div>
+          </div>
+          <details v-if="msg.reasoning && !streaming" class="thinking-done" open>
+            <summary class="thinking-summary">Show thinking ({{ msg.reasoning.length }} chars)</summary>
+            <div class="thinking-text">{{ msg.reasoning }}</div>
           </details>
+
           <div class="msg-content">{{ msg.content }}</div>
           <div v-if="msg.metrics" class="msg-stats">
-            <span>{{ (msg.metrics.ttft / 1000).toFixed(2) }}s TTFT</span>
-            <span class="dot">·</span>
-            <span>{{ msg.metrics.tps.toFixed(1) }} tok/s</span>
-            <span class="dot">·</span>
-            <span>{{ msg.metrics.completionTokens }} tokens</span>
-            <span class="dot">·</span>
-            <span>{{ (msg.metrics.duration / 1000).toFixed(1) }}s</span>
+            {{ (msg.metrics.ttft / 1000).toFixed(2) }}s TTFT · {{ msg.metrics.tps.toFixed(1) }} tok/s · {{ msg.metrics.completionTokens }} tok · {{ (msg.metrics.duration / 1000).toFixed(1) }}s
           </div>
         </div>
       </div>
     </div>
 
+    <!-- Input -->
     <div class="input-area">
       <div class="input-wrap">
         <textarea
-          v-model="prompt"
-          placeholder="Type your message…"
-          rows="1"
-          @keydown.enter.ctrl="send"
-          @keydown.enter.exact.prevent="send"
-          :disabled="streaming"
-          class="input-field"
+          v-model="prompt" placeholder="Type your message…" rows="1"
+          @keydown.enter.ctrl="send" @keydown.enter.exact.prevent="send"
+          :disabled="streaming" class="input-field"
         />
-        <button
-          v-if="streaming"
-          class="send-btn stop"
-          @click="stop"
-          title="Stop"
-        >
-          ■
-        </button>
-        <button
-          v-else
-          class="send-btn"
-          @click="send"
-          :disabled="!prompt.trim()"
-          title="Send"
-        >
-          →
-        </button>
+        <button v-if="streaming" class="send-btn stop" @click="stop" title="Stop">■</button>
+        <button v-else class="send-btn" @click="send" :disabled="!prompt.trim()" title="Send">→</button>
       </div>
-      <p class="input-hint">Ctrl+Enter to send</p>
+      <p class="input-hint">Enter to send · Ctrl+Enter for newline</p>
     </div>
   </div>
 </template>
 
 <style scoped>
 .playground {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: var(--space-4) var(--space-6);
-  max-width: 800px;
-  margin: 0 auto;
-  width: 100%;
-  gap: var(--space-3);
+  display: flex; flex-direction: column; height: 100%;
+  padding: var(--space-3) var(--space-4); gap: var(--space-2);
+  max-width: 800px; margin: 0 auto; width: 100%;
 }
 
-/* Top bar with model picker + actions */
+/* Compact top bar */
 .top-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
 }
 
-.model-picker {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
+.left-group, .right-group {
+  display: flex; align-items: center; gap: var(--space-1);
 }
 
 .model-select {
-  padding: var(--space-1) var(--space-3);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--ink);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  min-width: 160px;
-  cursor: pointer;
+  padding: var(--space-1) var(--space-2); background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  color: var(--ink); font-family: var(--font-mono); font-size: 12px;
+  max-width: 160px;
 }
+.model-select:focus { outline: none; border-color: var(--primary); }
 
-.model-select:focus {
-  outline: none;
-  border-color: var(--primary);
+.icon-btn {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: 14px; padding: 2px; line-height: 1;
 }
+.icon-btn:hover { color: var(--ink); }
+.icon-btn:disabled { opacity: 0.4; cursor: default; }
 
-.refresh-btn {
-  background: none;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 16px;
-  padding: 2px 4px;
+.toggle {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface); font-size: 12px; cursor: pointer;
   line-height: 1;
 }
-
-.refresh-btn:hover { color: var(--ink); }
-.refresh-btn:disabled { opacity: 0.4; cursor: default; }
-
-.loading-hint {
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.separator {
-  color: var(--border);
-  margin: 0 var(--space-1);
-}
-
-.provider-select {
-  max-width: 140px;
-  font-size: 12px;
-}
-
-.thinking-toggle {
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  white-space: nowrap;
-}
-
-.thinking-toggle.on {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.thinking-toggle:hover {
-  border-color: var(--muted);
-}
-
-.action-btns {
-  display: flex;
-  gap: var(--space-2);
-}
+.toggle.on { border-color: var(--accent); }
 
 /* Chat area */
 .chat-area {
-  flex: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  min-height: 0;
-  padding: var(--space-1);
+  flex: 1; overflow-y: auto; display: flex; flex-direction: column;
+  gap: var(--space-2); min-height: 0; padding: 2px 0;
 }
 
 .empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: var(--space-1);
   color: var(--muted);
 }
+.empty-title { font-size: 16px; font-weight: 600; }
+.empty-hint { font-size: 12px; }
 
-.empty-icon {
-  font-size: 32px;
-  opacity: 0.3;
-}
-
-.empty-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--muted);
-}
-
-.empty-hint {
-  font-size: 13px;
-  text-align: center;
-  max-width: 300px;
-  line-height: 1.5;
-}
-
-/* Message bubbles */
 .msg {
-  display: flex;
-  gap: var(--space-3);
-  animation: fadeIn 200ms ease-out;
+  display: flex; gap: var(--space-2); animation: fadeIn 150ms ease-out;
 }
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
 .msg-avatar {
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
-  color: white;
-  margin-top: 2px;
+  width: 24px; height: 24px; min-width: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  color: white; margin-top: 1px;
 }
+.msg.user .msg-avatar { background: var(--primary); }
+.msg.assistant .msg-avatar { background: var(--accent); }
 
-.msg.user .msg-avatar {
-  background: var(--primary);
-}
-
-.msg.assistant .msg-avatar {
-  background: var(--accent);
-}
-
-.msg-body {
-  flex: 1;
-  min-width: 0;
-}
-
-.msg-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ink);
-  margin-bottom: var(--space-1);
-}
+.msg-body { flex: 1; min-width: 0; }
+.msg-label { font-size: 11px; font-weight: 600; margin-bottom: 2px; }
 
 .msg-content {
-  font-size: 14px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--ink);
-}
-
-.reasoning-block {
-  margin-bottom: var(--space-3);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: var(--space-2);
-}
-
-.reasoning-summary {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--accent);
-  cursor: pointer;
-  user-select: none;
-}
-
-.reasoning-summary:hover {
-  opacity: 0.8;
-}
-
-.reasoning-content {
-  margin-top: var(--space-2);
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--muted);
-  white-space: pre-wrap;
-  word-break: break-word;
+  font-size: 13px; line-height: 1.5; white-space: pre-wrap;
+  word-break: break-word; color: var(--ink);
 }
 
 .msg-stats {
-  margin-top: var(--space-2);
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--border);
-  font-size: 12px;
-  color: var(--muted);
+  margin-top: var(--space-1); font-size: 11px; color: var(--muted);
   font-family: var(--font-mono);
 }
 
-.dot {
-  margin: 0 6px;
+/* Live thinking */
+.thinking-live {
+  margin-bottom: var(--space-2); padding: var(--space-2);
+  background: color-mix(in oklch, var(--accent) 8%, transparent);
+  border-radius: var(--radius-md); border-left: 2px solid var(--accent);
 }
+.thinking-header { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); margin-bottom: var(--space-1); }
+.thinking-text { font-size: 12px; line-height: 1.5; color: var(--muted); white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; }
 
-/* Input area */
-.input-area {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
+.thinking-done { margin-bottom: var(--space-2); }
+.thinking-summary { font-size: 11px; font-weight: 500; color: var(--accent); cursor: pointer; }
+.thinking-summary:hover { opacity: 0.8; }
 
+/* Input */
+.input-area { display: flex; flex-direction: column; gap: 2px; }
 .input-wrap {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-2);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-2);
+  display: flex; align-items: flex-end; gap: var(--space-2);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: var(--space-1) var(--space-2);
   transition: border-color var(--transition-fast);
 }
-
-.input-wrap:focus-within {
-  border-color: var(--primary);
-}
-
+.input-wrap:focus-within { border-color: var(--primary); }
 .input-field {
-  flex: 1;
-  background: transparent;
-  border: none;
-  color: var(--ink);
-  font-family: var(--font-ui);
-  font-size: 14px;
-  line-height: 1.5;
-  resize: none;
-  padding: var(--space-1);
-  max-height: 120px;
+  flex: 1; background: transparent; border: none; color: var(--ink);
+  font-family: var(--font-ui); font-size: 13px; line-height: 1.5;
+  resize: none; padding: var(--space-1); max-height: 100px;
 }
-
-.input-field:focus {
-  outline: none;
-}
-
-.input-field::placeholder {
-  color: var(--muted);
-  opacity: 0.6;
-}
+.input-field:focus { outline: none; }
+.input-field::placeholder { color: var(--muted); opacity: 0.6; }
 
 .send-btn {
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  border-radius: 50%;
-  border: none;
-  background: var(--primary);
-  color: white;
-  font-size: 16px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: opacity var(--transition-fast), background var(--transition-fast);
+  width: 30px; height: 30px; min-width: 30px; border-radius: 50%;
+  border: none; background: var(--primary); color: white; font-size: 14px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: opacity var(--transition-fast);
 }
+.send-btn:hover:not(:disabled) { opacity: 0.85; }
+.send-btn:disabled { opacity: 0.3; cursor: default; }
+.send-btn.stop { background: var(--danger); font-size: 11px; }
 
-.send-btn:hover:not(:disabled) {
-  opacity: 0.85;
-}
+.input-hint { font-size: 10px; color: var(--muted); text-align: right; }
 
-.send-btn:disabled {
-  opacity: 0.3;
-  cursor: default;
-}
-
-.send-btn.stop {
-  background: var(--danger);
-  font-size: 12px;
-}
-
-.input-hint {
-  font-size: 11px;
-  color: var(--muted);
-  text-align: right;
-  padding-right: var(--space-1);
-}
-
-/* Phase metrics */
-.phase-metrics {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.phase-block {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  font-size: 12px;
-}
-
-.phase-block.thinking {
-  border-left: 2px solid var(--accent);
-}
-
-.phase-block.answering {
-  border-left: 2px solid var(--success);
-}
-
-.phase-label {
-  font-weight: 600;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.phase-speed {
-  font-family: var(--font-mono);
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.phase-tokens,
-.phase-time {
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-
-/* Shared button styles */
+/* Buttons */
 .btn {
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-md);
-  border: 1px solid transparent;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+  padding: var(--space-1) var(--space-2); border-radius: var(--radius-md);
+  border: 1px solid var(--border); font-size: 11px; font-weight: 500;
+  cursor: pointer; background: var(--surface); color: var(--ink);
+  transition: background var(--transition-fast);
 }
-
-.btn-sm { padding: var(--space-1) var(--space-3); font-size: 12px; }
-
-.btn-outline {
-  background: transparent;
-  border-color: var(--border);
-  color: var(--ink);
-}
-
-.btn-outline:hover {
-  background: var(--surface);
-  border-color: var(--muted);
-}
-
-.btn-ghost {
-  background: transparent;
-  border-color: transparent;
-  color: var(--muted);
-}
-
-.btn-ghost:hover {
-  background: var(--surface);
-  color: var(--ink);
-}
+.btn:hover { background: var(--border); }
+.btn.solid { background: var(--primary); color: white; border-color: transparent; }
+.btn.ghost { border-color: transparent; color: var(--muted); }
+.btn.ghost:hover { background: var(--surface); color: var(--ink); }
 </style>

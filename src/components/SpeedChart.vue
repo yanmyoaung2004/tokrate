@@ -1,93 +1,96 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from "vue";
 import * as echarts from "echarts";
-import type { RunMetrics } from "@/types";
 
+const ACCENT = "#6b8cff";
 const PRIMARY = "#8854D0";
 const MUTED = "#8a8a9a";
 const BORDER = "#38384a";
 
 const props = defineProps<{
-  metrics: Partial<RunMetrics>;
+  metrics: Record<string, unknown>;
+  phase?: "thinking" | "answering";
+  thinkingData?: { time: number; tps: number }[];
+  answeringData?: { time: number; tps: number }[];
 }>();
 
 const containerRef = ref<HTMLElement | null>(null);
+const visible = ref(true);
 let chart: echarts.ECharts | null = null;
-const tpsHistory = ref<{ time: number; tps: number }[]>([]);
 
 function initChart() {
   if (!containerRef.value) return;
   chart = echarts.init(containerRef.value, undefined, { renderer: "canvas" });
   chart.setOption({
-    grid: { left: 55, right: 20, top: 10, bottom: 30 },
+    grid: { left: 45, right: 10, top: 8, bottom: 24 },
     xAxis: {
       type: "value",
-      name: "Elapsed (seconds)",
+      name: "Seconds",
       nameLocation: "center",
-      nameGap: 20,
-      nameTextStyle: { color: MUTED, fontSize: 11, fontWeight: 500 },
+      nameGap: 16,
+      nameTextStyle: { color: MUTED, fontSize: 10 },
       axisLine: { lineStyle: { color: BORDER } },
-      axisLabel: { color: MUTED, fontSize: 10 },
-      splitLine: { lineStyle: { color: BORDER, opacity: 0.3 } },
+      axisLabel: { color: MUTED, fontSize: 9 },
+      splitLine: { show: false },
     },
     yAxis: {
       type: "value",
-      name: "Tokens/s",
-      nameTextStyle: { color: MUTED, fontSize: 11, fontWeight: 500 },
+      name: "tok/s",
+      nameTextStyle: { color: MUTED, fontSize: 10 },
       min: 0,
       axisLine: { lineStyle: { color: BORDER } },
-      axisLabel: { color: MUTED, fontSize: 10 },
-      splitLine: { lineStyle: { color: BORDER, opacity: 0.3 } },
+      axisLabel: { color: MUTED, fontSize: 9 },
+      splitLine: { lineStyle: { color: BORDER, opacity: 0.2 } },
     },
-    series: [{
-      type: "line",
-      data: [],
-      smooth: true,
-      showSymbol: false,
-      lineStyle: { width: 2, color: PRIMARY },
-      areaStyle: {
-        color: {
-          type: "linear",
-          x: 0, y: 0, x2: 0, y2: 1,
-          colorStops: [
-            { offset: 0, color: PRIMARY },
-            { offset: 1, color: "transparent" },
-          ],
+    series: [
+      {
+        name: "Thinking",
+        type: "line",
+        data: [],
+        smooth: true,
+        showSymbol: false,
+        lineStyle: { width: 2, color: ACCENT },
+        areaStyle: {
+          color: { type: "linear", x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [{ offset: 0, color: ACCENT }, { offset: 1, color: "transparent" }],
+          },
         },
       },
-    }],
+      {
+        name: "Answering",
+        type: "line",
+        data: [],
+        smooth: true,
+        showSymbol: false,
+        lineStyle: { width: 2, color: PRIMARY },
+        areaStyle: {
+          color: { type: "linear", x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [{ offset: 0, color: PRIMARY }, { offset: 1, color: "transparent" }],
+          },
+        },
+      },
+    ],
     animation: false,
   });
-
-  // Flush any data that arrived before chart init
-  if (tpsHistory.value.length) {
-    chart.setOption({ series: [{ data: tpsHistory.value.map((p) => [p.time, p.tps]) }] });
-  }
 }
 
 function updateChart() {
-  const tps = props.metrics.tps;
-  const elapsed = props.metrics.duration ?? 0;
-
-  if (tps && elapsed > 0) {
-    tpsHistory.value.push({ time: +(elapsed / 1000).toFixed(2), tps: +(tps).toFixed(1) });
-  }
-
-  if (chart) {
-    chart.setOption({ series: [{ data: tpsHistory.value.map((p) => [p.time, p.tps]) }] });
-  }
+  if (!chart) return;
+  chart.setOption({
+    series: [
+      { data: (props.thinkingData || []).map((p) => [p.time, p.tps]) },
+      { data: (props.answeringData || []).map((p) => [p.time, p.tps]) },
+    ],
+  });
 }
 
 function reset() {
-  tpsHistory.value = [];
   if (chart) {
-    chart.setOption({ series: [{ data: [] }] });
+    chart.setOption({ series: [{ data: [] }, { data: [] }] });
   }
 }
 
-watch(() => props.metrics, () => {
-  updateChart();
-}, { deep: true });
+watch(() => [props.thinkingData?.length, props.answeringData?.length], updateChart);
 
 defineExpose({ reset });
 
@@ -100,12 +103,15 @@ onUnmounted(() => {
 
 <template>
   <div class="chart-panel">
-    <div class="panel-header">
-      <span class="panel-title">Speed Over Time</span>
-      <span class="panel-hint">TPS (tokens per second) during generation</span>
-      <span v-if="tpsHistory.length" class="data-count">{{ tpsHistory.length }} points</span>
+    <div class="panel-header" @click="visible = !visible">
+      <span class="panel-title">Speed over time</span>
+      <span class="legend">
+        <span class="legend-dot thinking" /> Thinking
+        <span class="legend-dot answering" /> Answering
+      </span>
+      <span class="toggle-btn">{{ visible ? "▲" : "▼" }}</span>
     </div>
-    <div ref="containerRef" class="chart-area"></div>
+    <div v-show="visible" ref="containerRef" class="chart-area"></div>
   </div>
 </template>
 
@@ -114,39 +120,53 @@ onUnmounted(() => {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-4);
+  overflow: hidden;
 }
 
 .panel-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-2);
-  margin-bottom: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  user-select: none;
 }
 
 .panel-title {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
 }
 
-.panel-hint {
-  font-size: 11px;
-  color: var(--muted);
-  opacity: 0.7;
-}
-
-.data-count {
-  margin-left: auto;
+.legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font-size: 10px;
   color: var(--muted);
-  font-family: var(--font-mono);
+  margin-left: auto;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.legend-dot.thinking { background: #6b8cff; }
+.legend-dot.answering { background: #8854D0; }
+
+.toggle-btn {
+  font-size: 10px;
+  color: var(--muted);
+  opacity: 0.5;
 }
 
 .chart-area {
   width: 100%;
-  height: 150px;
+  height: 120px;
+  border-top: 1px solid var(--border);
 }
 </style>
