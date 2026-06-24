@@ -4,6 +4,25 @@ function normalizeUrl(base: string): string {
   return base.replace(/\/+$/, "");
 }
 
+function cleanPath(base: string): string {
+  try {
+    const path = new URL(base).pathname;
+    // If base already ends with /v1, don't prepend another /v1
+    if (path.endsWith("/v1")) return "";
+    if (path.endsWith("/v1/")) return "/";
+    // If base contains /v1/ somewhere, don't add /v1
+    if (path.includes("/v1/")) return "";
+    return "/v1";
+  } catch {
+    return "/v1";
+  }
+}
+
+function apiUrl(base: string, path: string): string {
+  const normalized = normalizeUrl(base);
+  return `${normalized}${cleanPath(base)}${path}`;
+}
+
 async function fetchWithCors(
   url: string,
   options?: RequestInit & { apiKey?: string }
@@ -28,9 +47,9 @@ async function fetchWithCors(
 export async function testConnection(serverUrl: string, apiKey: string): Promise<boolean> {
   const base = normalizeUrl(serverUrl);
 
-  // Try OpenAI-compatible /v1/models first (works with vLLM, SGLang, LM Studio, TGI)
+  // Try OpenAI-compatible models endpoint first
   try {
-    const res = await fetchWithCors(`${base}/v1/models`, {
+    const res = await fetchWithCors(apiUrl(base, "/models"), {
       signal: AbortSignal.timeout(5000),
       apiKey,
     });
@@ -56,7 +75,7 @@ export async function fetchModels(serverUrl: string, apiKey: string): Promise<st
 
   // Try OpenAI-compatible endpoint first
   try {
-    const res = await fetchWithCors(`${base}/v1/models`, {
+    const res = await fetchWithCors(apiUrl(base, "/models"), {
       signal: AbortSignal.timeout(5000),
       apiKey,
     });
@@ -100,7 +119,7 @@ export async function* streamChat(
   };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
-  const res = await fetch(`${base}/v1/chat/completions`, {
+  const res = await fetch(apiUrl(base, "/chat/completions"), {
     method: "POST",
     headers,
     body: JSON.stringify({
