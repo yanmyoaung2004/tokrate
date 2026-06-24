@@ -182,7 +182,7 @@ export async function* streamChat(
         const parsed = JSON.parse(data);
         const choice = parsed.choices?.[0];
         const delta = choice?.delta?.content || "";
-        const reasoningContent = choice?.delta?.reasoning_content || "";
+        const reasoningContent = choice?.delta?.reasoning_content || choice?.delta?.reasoning || "";
         const finishReason = choice?.finish_reason;
         const usage = parsed.usage;
 
@@ -207,6 +207,19 @@ export async function* streamChat(
           duration: elapsed,
         };
 
+        // Track phase transitions BEFORE setting chunk phase
+        if (reasoningContent && !inThinking && !inAnswering) {
+          inThinking = true;
+        }
+        if (!inThinking && !inAnswering && delta && !reasoningContent) {
+          // No reasoning at all — straight to answering phase
+          inAnswering = true;
+        }
+        if (inThinking && delta && !reasoningContent) {
+          inThinking = false;
+          inAnswering = true;
+        }
+
         const chunk: StreamChunk = {
           content: delta,
           reasoningContent,
@@ -215,15 +228,6 @@ export async function* streamChat(
           phase: inThinking ? "thinking" : "answering",
           raw: parsed,
         };
-
-        // Track phase transitions
-        if (reasoningContent && !inThinking && !inAnswering) {
-          inThinking = true;
-        }
-        if (inThinking && delta && !reasoningContent) {
-          inThinking = false;
-          inAnswering = true;
-        }
 
         yield chunk;
       } catch {
