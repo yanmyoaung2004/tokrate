@@ -184,6 +184,7 @@ function canSave(): boolean {
     <MetricsBar
       v-if="liveMetrics.ttft"
       :metrics="liveMetrics"
+      :streaming="streaming"
     />
 
     <div class="chat-area" ref="chatRef">

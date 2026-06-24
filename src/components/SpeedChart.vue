@@ -24,20 +24,23 @@ async function initChart() {
   const border = cssVar("--border");
 
   chart.setOption({
-    grid: { left: 50, right: 20, top: 20, bottom: 25 },
+    grid: { left: 55, right: 20, top: 10, bottom: 30 },
     xAxis: {
       type: "value",
-      name: "Time (s)",
-      nameTextStyle: { color: muted, fontSize: 10 },
+      name: "Elapsed time (seconds)",
+      nameLocation: "center",
+      nameGap: 20,
+      nameTextStyle: { color: muted, fontSize: 11, fontWeight: 500 },
       axisLine: { lineStyle: { color: border } },
+      axisLabel: { color: muted, fontSize: 10 },
       splitLine: { lineStyle: { color: border, opacity: 0.3 } },
     },
     yAxis: {
       type: "value",
-      name: "TPS",
-      min: 0,
-      nameTextStyle: { color: muted, fontSize: 10 },
+      name: "Tokens / sec",
+      nameTextStyle: { color: muted, fontSize: 11, fontWeight: 500 },
       axisLine: { lineStyle: { color: border } },
+      axisLabel: { color: muted, fontSize: 10 },
       splitLine: { lineStyle: { color: border, opacity: 0.3 } },
     },
     series: [
@@ -73,7 +76,7 @@ function updateChart() {
   }
 
   chart.setOption({
-    series: [{ data: tpsHistory.value.map((p) => [p.time, p.tps]) }],
+    series: [{ data: tpsHistory.value.map((p) => [Number(p.time.toFixed(2)), Number(p.tps.toFixed(1))]) }],
   });
 }
 
@@ -98,15 +101,46 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="containerRef" class="speed-chart"></div>
+  <div class="chart-panel">
+    <div class="panel-header">
+      <span class="panel-title">Speed Over Time</span>
+      <span class="panel-hint">TPS (tokens per second) during generation</span>
+    </div>
+    <div ref="containerRef" class="chart-area"></div>
+  </div>
 </template>
 
 <style scoped>
-.speed-chart {
-  width: 100%;
-  height: 160px;
+.chart-panel {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+}
+
+.panel-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.panel-hint {
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.chart-area {
+  width: 100%;
+  height: 150px;
 }
 </style>
