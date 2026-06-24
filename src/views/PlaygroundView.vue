@@ -1,19 +1,52 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useConfigStore } from "@/stores/config";
+import { useHistoryStore } from "@/stores/history";
 import { streamChat } from "@/api/client";
-import type { ChatMessage, RunMetrics } from "@/types";
+import type { ChatMessage, RunMetrics, BenchmarkRun } from "@/types";
+import MetricsBar from "@/components/MetricsBar.vue";
+import SpeedChart from "@/components/SpeedChart.vue";
 
 const config = useConfigStore();
+const history = useHistoryStore();
 const prompt = ref("");
 const messages = ref<ChatMessage[]>([]);
 const streaming = ref(false);
 const liveMetrics = ref<Partial<RunMetrics>>({});
 const abortController = ref<AbortController | null>(null);
+const speedChartRef = ref<InstanceType<typeof SpeedChart> | null>(null);
+function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
 
-function formatMs(ms: number): string {
-  if (ms < 1000) return `${ms.toFixed(0)}ms`;
-  return `${(ms / 1000).toFixed(2)}s`;
+async function saveRun() {
+  const m = messages.value;
+  const userMsg = m.find((msg) => msg.role === "user");
+  const assistantMsg = m.find((msg) => msg.role === "assistant" && msg.metrics);
+  if (!userMsg || !assistantMsg?.metrics) return;
+
+  const run: BenchmarkRun = {
+    id: generateId(),
+    timestamp: Date.now(),
+    engine: config.serverUrl,
+    model: config.defaultModel || "unknown",
+    prompt: userMsg.content,
+    response: assistantMsg.content,
+    tps: assistantMsg.metrics.tps,
+    ttft: assistantMsg.metrics.ttft,
+    tpot: assistantMsg.metrics.tpot,
+    promptTokens: assistantMsg.metrics.promptTokens,
+    completionTokens: assistantMsg.metrics.completionTokens,
+    totalTokens: assistantMsg.metrics.totalTokens,
+  };
+  await history.addRun(run);
+}
+
+function canSave(): boolean {
+  const assistantMsg = messages.value.find(
+    (msg) => msg.role === "assistant" && msg.metrics
+  );
+  return !!assistantMsg;
 }
 
 async function send() {
@@ -70,6 +103,7 @@ function stop() {
 function clear() {
   messages.value = [];
   liveMetrics.value = {};
+  speedChartRef.value?.reset();
 }
 </script>
 
@@ -77,8 +111,22 @@ function clear() {
   <div class="playground">
     <div class="playground-header">
       <h1 class="page-title">Playground</h1>
-      <button v-if="messages.length" class="btn btn-ghost" @click="clear">Clear</button>
+      <div class="header-actions">
+        <button v-if="canSave() && !streaming" class="btn btn-secondary btn-sm" @click="saveRun">Save Run</button>
+        <button v-if="liveMetrics.ttft && !streaming" class="btn btn-ghost btn-sm" @click="clear">Clear</button>
+      </div>
     </div>
+
+    <SpeedChart
+      v-if="liveMetrics.ttft"
+      ref="speedChartRef"
+      :metrics="liveMetrics"
+    />
+
+    <MetricsBar
+      v-if="liveMetrics.ttft"
+      :metrics="liveMetrics"
+    />
 
     <div class="chat-area" v-if="messages.length">
       <div
@@ -90,36 +138,19 @@ function clear() {
         <div class="message-label">{{ msg.role }}</div>
         <div class="message-content">{{ msg.content }}</div>
         <div v-if="msg.metrics" class="message-metrics">
-          <span class="metric">TTFT {{ formatMs(msg.metrics.ttft) }}</span>
+          <span class="metric">TTFT {{ (msg.metrics.ttft / 1000).toFixed(2) }}s</span>
           <span class="divider">·</span>
           <span class="metric">{{ msg.metrics.tps.toFixed(1) }} tok/s</span>
           <span class="divider">·</span>
           <span class="metric">{{ msg.metrics.completionTokens }} tokens</span>
+          <span class="divider">·</span>
+          <span class="metric">{{ (msg.metrics.duration / 1000).toFixed(1) }}s</span>
         </div>
       </div>
     </div>
 
     <div v-else class="empty-state">
       <p>Connect to a server and send a prompt to see live metrics.</p>
-    </div>
-
-    <div v-if="liveMetrics.ttft" class="metrics-bar">
-      <div class="metric-item">
-        <span class="metric-label">TTFT</span>
-        <span class="metric-value">{{ formatMs(liveMetrics.ttft) }}</span>
-      </div>
-      <div class="metric-item">
-        <span class="metric-label">TPS</span>
-        <span class="metric-value">{{ (liveMetrics.tps || 0).toFixed(1) }}</span>
-      </div>
-      <div class="metric-item">
-        <span class="metric-label">TPOT</span>
-        <span class="metric-value">{{ (liveMetrics.tpot || 0).toFixed(1) }}ms</span>
-      </div>
-      <div class="metric-item">
-        <span class="metric-label">Tokens</span>
-        <span class="metric-value">{{ liveMetrics.completionTokens || 0 }}</span>
-      </div>
     </div>
 
     <div class="input-area">
@@ -160,13 +191,13 @@ function clear() {
   max-width: 800px;
   margin: 0 auto;
   width: 100%;
+  gap: var(--space-3);
 }
 
 .playground-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--space-4);
 }
 
 .page-title {
@@ -174,13 +205,17 @@ function clear() {
   font-weight: 600;
 }
 
+.header-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
 .chat-area {
   flex: 1;
   overflow-y: auto;
-  margin-bottom: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
 .message {
@@ -213,46 +248,12 @@ function clear() {
 }
 
 .message-metrics {
-  margin-top: var(--space-3);
+  margin-top: var(--space-2);
   padding-top: var(--space-2);
   border-top: 1px solid var(--border);
   font-size: 12px;
   color: var(--muted);
   font-family: var(--font-mono);
-}
-
-.metric, .divider {
-  display: inline;
-}
-
-.metrics-bar {
-  display: flex;
-  gap: var(--space-6);
-  padding: var(--space-3) var(--space-4);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  margin-bottom: var(--space-4);
-}
-
-.metric-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.metric-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-}
-
-.metric-value {
-  font-family: var(--font-mono);
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--ink);
 }
 
 .empty-state {
@@ -313,6 +314,11 @@ function clear() {
   cursor: default;
 }
 
+.btn-sm {
+  padding: var(--space-1) var(--space-3);
+  font-size: 12px;
+}
+
 .btn-primary {
   background: var(--primary);
   color: white;
@@ -329,6 +335,16 @@ function clear() {
 
 .btn-danger:hover {
   opacity: 0.9;
+}
+
+.btn-secondary {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--ink);
+}
+
+.btn-secondary:hover {
+  background: var(--border);
 }
 
 .btn-ghost {

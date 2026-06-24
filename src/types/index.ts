@@ -42,11 +42,16 @@ export interface ModelProfile {
 export interface BenchmarkRun {
   id: string;
   timestamp: number;
-  engineConfig: EngineConfig;
+  engine: string;
+  model: string;
   prompt: string;
   response: string;
-  metrics: RunMetrics;
-  hardware: HardwareInfo;
+  tps: number;
+  ttft: number;
+  tpot: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
 }
 
 export interface HardwareInfo {
