@@ -46,7 +46,7 @@ function removeConfig(id: string) {
 function fillQuants() {
   if (!fillBase.value.trim()) return;
   const base = fillBase.value.split(":")[0];
-  configs.value = QUANTS.map((q, i) => ({
+  configs.value = QUANTS.map((q) => ({
     id: String(nextId++), label: q, serverUrl: defaultConfig.serverUrl,
     apiKey: defaultConfig.apiKey, model: `${base}:${q}`,
     temperature: 0.7, maxTokens: 2048,
@@ -135,7 +135,7 @@ function clearResults() { results.value = []; }
     <div class="prompt-row">
       <textarea v-model="prompt" placeholder="Enter a prompt to run against all configurations…" rows="2" class="prompt-input" :disabled="running" />
       <button class="btn primary" @click="runAll" :disabled="!prompt.trim() || running">
-        {{ running ? "Running…" : `Run (${configs.value.length})` }}
+        {{ running ? "Running…" : `Run (${configs.length})` }}
       </button>
     </div>
 
