@@ -122,8 +122,17 @@ async function testProvider(idx: number) {
 
     <!-- Provider list -->
     <div class="section">
-      <h2 class="section-title">Providers</h2>
-      <div v-if="!config.providers.length" class="empty">No providers configured. Click "+ Add Provider" to add one.</div>
+      <div class="section-h">
+        <h2 class="section-title">Providers</h2>
+      </div>
+
+      <!-- Empty state -->
+      <div v-if="!config.providers.length" class="empty-state">
+        <div class="empty-icon">⚡</div>
+        <h3 class="empty-title">No providers yet</h3>
+        <p class="empty-desc">Add your first LLM server to get started. TokRate works with any OpenAI-compatible API — Ollama, vLLM, llama.cpp, LM Studio, SGLang.</p>
+        <button class="btn primary" @click="startAdd">+ Add Provider</button>
+      </div>
       <div v-for="(p, i) in config.providers" :key="p.url + p.label" class="provider-card">
         <div class="provider-info">
           <span class="provider-name">{{ p.label }}</span>
@@ -197,7 +206,17 @@ async function testProvider(idx: number) {
   font-size: 13px; font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.06em; color: var(--muted);
 }
-.empty { font-size: 13px; color: var(--muted); padding: var(--space-4) 0; }
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: var(--space-10) var(--space-4); gap: var(--space-3);
+  background: var(--surface); border: 1px dashed var(--border);
+  border-radius: var(--radius-md); text-align: center;
+}
+.empty-icon { font-size: 32px; opacity: 0.5; }
+.empty-title { font-size: 16px; font-weight: 600; }
+.empty-desc { font-size: 13px; color: var(--muted); max-width: 400px; line-height: 1.5; }
+
+.section-h { display: flex; align-items: center; justify-content: space-between; }
 
 /* Provider card */
 .provider-card {
