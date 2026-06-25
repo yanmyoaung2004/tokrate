@@ -5,6 +5,7 @@ import { useToastStore } from "@/stores/toast";
 import { streamChat, fetchModels } from "@/api/client";
 import { renderMarkdown } from "@/utils/markdown";
 import type { RunMetrics } from "@/types";
+import QuantizationScanner from "@/components/QuantizationScanner.vue";
 
 interface CompareConfig {
   id: string; label: string; serverUrl: string; apiKey: string;
@@ -16,6 +17,8 @@ interface CompareResult {
   metrics: RunMetrics | null;
   status: "pending" | "running" | "done" | "error"; error?: string;
 }
+
+const tab = ref<"compare" | "quant">("compare");
 
 const QUANTS = ["q2_k", "q3_k_m", "q4_0", "q4_k_m", "q5_k_m", "q6_k", "q8_0"];
 
@@ -144,7 +147,10 @@ function exportResults() {
 <template>
   <div class="compare-page">
     <div class="top-bar">
-      <h1 class="title">Compare</h1>
+      <div class="tabs">
+        <button class="tab" :class="{ active: tab === 'compare' }" @click="tab = 'compare'">Manual Compare</button>
+        <button class="tab" :class="{ active: tab === 'quant' }" @click="tab = 'quant'">Quantization Scanner</button>
+      </div>
       <div class="right">
         <span v-if="running" class="progress">{{ currentProgress }}</span>
         <button v-if="results.length" class="btn ghost btn-sm" @click="exportResults">Export</button>
@@ -152,6 +158,9 @@ function exportResults() {
       </div>
     </div>
 
+    <QuantizationScanner v-if="tab === 'quant'" />
+
+    <template v-if="tab === 'compare'">
     <!-- Config cards -->
     <div class="config-grid">
       <div v-for="cfg in configs" :key="cfg.id" class="card">
@@ -236,14 +245,20 @@ function exportResults() {
       <h3 class="empty-title">No results yet</h3>
       <p class="empty-desc">Add configurations on the left, enter a prompt below, and click Run.</p>
     </div>
+    </template>
   </div>
 </template>
 
 <style scoped>
 .compare-page { height: 100%; display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); max-width: 1100px; margin: 0 auto; width: 100%; overflow: hidden; }
 
-.top-bar { display: flex; align-items: center; justify-content: space-between; }
+.top-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 .title { font-size: 16px; font-weight: 600; }
+.tabs { display: flex; gap: 0; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+.tab { padding: var(--space-1) var(--space-3); font-size: 11px; font-weight: 500; background: transparent; color: var(--muted); cursor: pointer; border: none; transition: background var(--transition-fast), color var(--transition-fast); }
+.tab:hover { background: var(--surface); }
+.tab.active { background: var(--surface); color: var(--ink); font-weight: 600; }
+.tab + .tab { border-left: 1px solid var(--border); }
 .right { display: flex; align-items: center; gap: var(--space-2); }
 .progress { font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
 
