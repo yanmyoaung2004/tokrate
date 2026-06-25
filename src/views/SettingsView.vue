@@ -43,21 +43,17 @@ function saveProvider() {
   }
   try { new URL(editUrl.value); } catch { toast.add("Invalid URL", "error"); return; }
 
-  const updated: Provider = { label: editLabel.value.trim(), url: editUrl.value.trim().replace(/\/+$/, ""), apiKey: editKey.value };
+  const updated: Provider = {
+    label: editLabel.value.trim(),
+    url: editUrl.value.trim().replace(/\/+$/, ""),
+    apiKey: editKey.value,
+  };
 
-  // If editing and URL changed, remove old entry
-  if (editing.value && editing.value.url !== updated.url) {
-    config.providers = config.providers.filter((p) => p.url !== editing.value!.url || p.label !== editing.value!.label);
-  }
+  // Remove any existing entry with the same URL (dedup)
+  config.providers = config.providers.filter((p) => p.url !== updated.url);
 
-  // Update by URL if exists, otherwise add
-  const byUrl = config.providers.find((p) => p.url === updated.url);
-  if (byUrl) {
-    byUrl.label = updated.label;
-    byUrl.apiKey = updated.apiKey;
-  } else {
-    config.providers.push(updated);
-  }
+  // Add the new/updated entry
+  config.providers.push(updated);
   config.selectProvider(updated.url, updated.apiKey);
   isEditing.value = false;
   editing.value = null;

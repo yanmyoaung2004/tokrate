@@ -82,10 +82,24 @@ export const useConfigStore = defineStore("config", () => {
     if (!providers.value.length) {
       providers.value = [...DEFAULT_PROVIDERS];
     }
+    // Deduplicate providers by URL (keep last occurrence)
+    const seen = new Set<string>();
+    providers.value = providers.value.filter((p) => {
+      if (seen.has(p.url)) return false;
+      seen.add(p.url);
+      return true;
+    });
     loaded.value = true;
   }
 
   async function save() {
+    // Deduplicate providers by URL before saving
+    const seen = new Set<string>();
+    providers.value = providers.value.filter((p) => {
+      if (seen.has(p.url)) return false;
+      seen.add(p.url);
+      return true;
+    });
     await storeSet("serverUrl", serverUrl.value);
     await storeSet("apiKey", apiKey.value);
     await storeSet("defaultModel", defaultModel.value);
