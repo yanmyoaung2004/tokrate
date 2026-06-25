@@ -40,13 +40,15 @@ const currentProgress = ref("");
 const availableModels = ref<string[]>([]);
 let nextId = 3;
 
-const quantConfigs = computed(() =>
-  COMMON_QUANTS.map((q, i) => ({
+const quantConfigs = computed(() => {
+  const parts = quantBase.value.split(":");
+  const baseName = parts[0];
+  return COMMON_QUANTS.map((q, i) => ({
     id: `q-${i}`, label: q.label, serverUrl: defaultConfig.serverUrl,
-    apiKey: defaultConfig.apiKey, model: `${quantBase.value}:${q.tag}`,
+    apiKey: defaultConfig.apiKey, model: `${baseName}:${q.tag}`,
     temperature: 0.7, maxTokens: 2048,
-  }))
-);
+  }));
+});
 
 async function loadModelsFor(cfg: CompareConfig) {
   availableModels.value = await fetchModels(cfg.serverUrl, cfg.apiKey);
@@ -147,7 +149,7 @@ function clearResults() { results.value = []; }
     <template v-if="mode === 'quant'">
       <div class="card">
         <div class="card-h"><span class="card-title">Quantization Tuner</span></div>
-        <p class="desc">Tests the same prompt across quantization levels of <code>{{ quantBase }}</code>.</p>
+        <p class="desc">Tests the same prompt across quantization levels of <code>{{ quantBase.split(":")[0] }}</code>.</p>
         <div class="quant-field">
           <label>Model base</label>
           <input v-model="quantBase" class="field-input" placeholder="llama3.2, deepseek-r1..." />
