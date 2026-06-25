@@ -7,3 +7,5 @@ dist/
 *.key
 src-tauri/target/
 .firecrawl/
+leaderboard-worker/node_modules/
+leaderboard-worker/.vite/
