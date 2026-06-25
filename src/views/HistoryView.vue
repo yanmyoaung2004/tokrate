@@ -11,17 +11,24 @@ const history = useHistoryStore();
 const toast = useToastStore();
 const selectedRun = ref<BenchmarkRun | null>(null);
 const publishRun = ref<BenchmarkRun | null>(null);
-const filter = ref("");
+const search = ref("");
+const sourceFilter = ref<"all" | "playground" | "proxy">("all");
 
 const filteredRuns = computed(() => {
-  if (!filter.value) return history.runs;
-  const f = filter.value.toLowerCase();
-  return history.runs.filter(
-    (r) =>
-      r.model.toLowerCase().includes(f) ||
-      r.prompt.toLowerCase().includes(f) ||
-      r.engine.toLowerCase().includes(f)
-  );
+  let runs = history.runs;
+  if (sourceFilter.value !== "all") {
+    runs = runs.filter((r) => r.source === sourceFilter.value);
+  }
+  if (search.value) {
+    const f = search.value.toLowerCase();
+    runs = runs.filter(
+      (r) =>
+        r.model.toLowerCase().includes(f) ||
+        r.prompt.toLowerCase().includes(f) ||
+        r.engine.toLowerCase().includes(f)
+    );
+  }
+  return runs;
 });
 
 onMounted(async () => {
@@ -86,8 +93,13 @@ function formatMs(ms: number): string {
 
     <div v-else class="history-layout">
       <div class="runs-list">
+        <div class="source-tabs">
+          <button class="source-tab" :class="{ active: sourceFilter === 'all' }" @click="sourceFilter = 'all'">All</button>
+          <button class="source-tab" :class="{ active: sourceFilter === 'playground' }" @click="sourceFilter = 'playground'">Playground</button>
+          <button class="source-tab" :class="{ active: sourceFilter === 'proxy' }" @click="sourceFilter = 'proxy'">Proxy</button>
+        </div>
         <input
-          v-model="filter"
+          v-model="search"
           class="search-input"
           placeholder="Search by model, prompt, engine..."
         />
@@ -99,7 +111,10 @@ function formatMs(ms: number): string {
             :class="{ selected: selectedRun?.id === run.id }"
             @click="selectedRun = run"
           >
-            <div class="run-model">{{ run.model }}</div>
+            <div class="run-model">
+              {{ run.model }}
+              <span class="source-badge" :class="run.source">{{ run.source === "proxy" ? "Proxy" : "Play" }}</span>
+            </div>
             <div class="run-meta">
               <span>{{ formatDate(run.timestamp) }}</span>
               <span>{{ run.tps.toFixed(1) }} tok/s</span>
@@ -126,6 +141,10 @@ function formatMs(ms: number): string {
           <div class="meta-row">
             <span class="meta-label">Engine</span>
             <span class="mono">{{ selectedRun.engine }}</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">Source</span>
+            <span class="mono">{{ selectedRun.source === "proxy" ? "Proxy capture" : "Playground" }}</span>
           </div>
           <div class="meta-row">
             <span class="meta-label">TTFT</span>
@@ -211,6 +230,26 @@ function formatMs(ms: number): string {
   gap: var(--space-3);
   min-height: 0;
 }
+
+.source-tabs {
+  display: flex; gap: 0; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden;
+}
+.source-tab {
+  flex: 1; padding: var(--space-1) var(--space-2); font-size: 11px; font-weight: 500;
+  background: transparent; color: var(--muted); cursor: pointer; border: none;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.source-tab:hover { background: var(--surface); }
+.source-tab.active { background: var(--surface); color: var(--ink); font-weight: 600; }
+.source-tab + .source-tab { border-left: 1px solid var(--border); }
+
+.source-badge {
+  display: inline-block; font-size: 9px; font-weight: 600; padding: 1px 5px;
+  border-radius: 3px; margin-left: var(--space-1); vertical-align: middle;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.source-badge.playground { background: color-mix(in oklch, var(--primary) 15%, transparent); color: var(--primary); }
+.source-badge.proxy { background: color-mix(in oklch, var(--accent) 15%, transparent); color: var(--accent); }
 
 .search-input {
   padding: var(--space-2) var(--space-3);

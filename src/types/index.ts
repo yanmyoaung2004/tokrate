@@ -87,6 +87,7 @@ export interface BenchmarkRun {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  source: "playground" | "proxy";
 }
 
 export interface HardwareInfo {

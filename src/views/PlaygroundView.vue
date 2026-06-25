@@ -212,6 +212,7 @@ async function saveRun() {
     promptTokens: assistantMsg.metrics.promptTokens,
     completionTokens: assistantMsg.metrics.completionTokens,
     totalTokens: assistantMsg.metrics.totalTokens,
+    source: "playground",
   });
   toast.add("Run saved to History", "success");
 }
