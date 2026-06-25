@@ -1,0 +1,7 @@
+name = "tokrate-leaderboard"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+
+[[kv_namespaces]]
+binding = "LEADERBOARD"
+id = "" # Replace with your KV namespace ID after creating it
