@@ -6,6 +6,7 @@ import { useToastStore } from "@/stores/toast";
 import type { BenchmarkRun } from "@/types";
 import PublishDialog from "@/components/PublishDialog.vue";
 import PerformanceTimeline from "@/components/PerformanceTimeline.vue";
+import DeltaCard from "@/components/DeltaCard.vue";
 
 const router = useRouter();
 const history = useHistoryStore();
@@ -83,6 +84,16 @@ function formatMs(ms: number): string {
         </div>
         <button v-if="history.runs.length" class="btn btn-ghost btn-sm" @click="handleClearAll">Clear All</button>
       </div>
+    </div>
+
+    <div v-if="history.deltas.length" class="deltas-section">
+      <h2 class="section-label">Performance Changes</h2>
+      <DeltaCard
+        v-for="d in history.deltas"
+        :key="d.id"
+        :delta="d"
+        @dismiss="history.dismissDelta(d.id)"
+      />
     </div>
 
     <PerformanceTimeline v-if="viewMode === 'timeline' && filteredRuns.length" :runs="filteredRuns" />
@@ -202,6 +213,8 @@ function formatMs(ms: number): string {
   margin-bottom: var(--space-4);
 }
 .header-right { display: flex; align-items: center; gap: var(--space-2); }
+.section-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: var(--space-2); }
+.deltas-section { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-3); }
 .view-tabs { display: flex; gap: 0; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
 .view-tab { padding: var(--space-1) var(--space-2); font-size: 10px; font-weight: 500; background: transparent; color: var(--muted); cursor: pointer; border: none; }
 .view-tab:hover { background: var(--surface); }
