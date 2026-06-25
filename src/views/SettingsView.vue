@@ -58,11 +58,6 @@ function saveProvider() {
   } else {
     config.providers.push(updated);
   }
-  if (existing) {
-    Object.assign(existing, updated);
-  } else {
-    config.providers.push(updated);
-  }
   config.selectProvider(updated.url, updated.apiKey);
   isEditing.value = false;
   editing.value = null;
