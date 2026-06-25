@@ -19,6 +19,37 @@ export const DEFAULT_PROVIDERS: Provider[] = [
   { label: "Ollama (localhost)", url: "http://localhost:11434", apiKey: "" },
 ];
 
+const STORAGE_KEY = "tokrate-config";
+
+async function storeGet<T>(key: string): Promise<T | null> {
+  try {
+    const { load } = await import("@tauri-apps/plugin-store");
+    const store = await load("config.json");
+    return (await store.get(key)) as T | null;
+  } catch {
+    // Browser mode — use localStorage
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const all = JSON.parse(raw);
+    return all[key] ?? null;
+  }
+}
+
+async function storeSet(key: string, value: unknown): Promise<void> {
+  try {
+    const { load } = await import("@tauri-apps/plugin-store");
+    const store = await load("config.json");
+    await store.set(key, value);
+    await store.save();
+  } catch {
+    // Browser mode — use localStorage
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    all[key] = value;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+  }
+}
+
 export const useConfigStore = defineStore("config", () => {
   const serverUrl = ref("http://localhost:11434");
   const apiKey = ref("");
@@ -26,22 +57,27 @@ export const useConfigStore = defineStore("config", () => {
   const theme = ref<"dark" | "light">("dark");
   const timeout = ref(30000);
   const providers = ref<Provider[]>([]);
-  const activeProvider = ref<string>("");
+  const activeProvider = ref("");
   const loaded = ref(false);
 
   async function load() {
     try {
-      const { load } = await import("@tauri-apps/plugin-store");
-      const store = await load("config.json");
-      serverUrl.value = ((await store.get("serverUrl")) as string) ?? "http://localhost:11434";
-      apiKey.value = ((await store.get("apiKey")) as string) ?? "";
-      defaultModel.value = ((await store.get("defaultModel")) as string) ?? "";
-      theme.value = ((await store.get("theme")) as "dark" | "light") ?? "dark";
-      timeout.value = ((await store.get("timeout")) as number) ?? 30000;
-      providers.value = ((await store.get("providers")) as Provider[]) ?? [];
-      activeProvider.value = ((await store.get("activeProvider")) as string) ?? "";
+      const s = await storeGet<string>("serverUrl");
+      if (s !== null) serverUrl.value = s;
+      const a = await storeGet<string>("apiKey");
+      if (a !== null) apiKey.value = a;
+      const d = await storeGet<string>("defaultModel");
+      if (d !== null) defaultModel.value = d;
+      const t = await storeGet<string>("theme");
+      if (t !== null) theme.value = t as "dark" | "light";
+      const to = await storeGet<number>("timeout");
+      if (to !== null) timeout.value = to;
+      const p = await storeGet<Provider[]>("providers");
+      if (p !== null) providers.value = p;
+      const ap = await storeGet<string>("activeProvider");
+      if (ap !== null) activeProvider.value = ap;
     } catch {
-      // Running in browser dev mode without Tauri
+      // Ignore
     }
     if (!providers.value.length) {
       providers.value = [...DEFAULT_PROVIDERS];
@@ -50,20 +86,13 @@ export const useConfigStore = defineStore("config", () => {
   }
 
   async function save() {
-    try {
-      const { load } = await import("@tauri-apps/plugin-store");
-      const store = await load("config.json");
-      await store.set("serverUrl", serverUrl.value);
-      await store.set("apiKey", apiKey.value);
-      await store.set("defaultModel", defaultModel.value);
-      await store.set("theme", theme.value);
-      await store.set("timeout", timeout.value);
-      await store.set("providers", providers.value);
-      await store.set("activeProvider", activeProvider.value);
-      await store.save();
-    } catch {
-      // Running in browser dev mode without Tauri
-    }
+    await storeSet("serverUrl", serverUrl.value);
+    await storeSet("apiKey", apiKey.value);
+    await storeSet("defaultModel", defaultModel.value);
+    await storeSet("theme", theme.value);
+    await storeSet("timeout", timeout.value);
+    await storeSet("providers", providers.value);
+    await storeSet("activeProvider", activeProvider.value);
     document.documentElement.setAttribute("data-theme", theme.value);
   }
 
