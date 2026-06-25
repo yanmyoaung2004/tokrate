@@ -3,7 +3,7 @@ import { ref, onMounted, computed } from "vue";
 import { useConfigStore } from "@/stores/config";
 import { useSuitesStore } from "@/stores/suites";
 import { useToastStore } from "@/stores/toast";
-import { streamChat } from "@/api/client";
+import { streamChat, fetchModels } from "@/api/client";
 import type { RunMetrics } from "@/types";
 
 const config = useConfigStore();
@@ -17,13 +17,36 @@ const newPromptContent = ref("");
 const running = ref(false);
 const results = ref<Record<string, RunMetrics | null>>({});
 const currentProgress = ref("");
+const runProviderUrl = ref(config.serverUrl);
+const runApiKey = ref(config.apiKey);
+const runModel = ref(config.defaultModel || "");
+const models = ref<string[]>([]);
+const loadingModels = ref(false);
 
 const selected = computed(() => suites.suites.find((s) => s.id === selectedId.value));
 
 onMounted(async () => {
   await suites.load();
   if (suites.suites.length) selectedId.value = suites.suites[0].id;
+  runProviderUrl.value = config.serverUrl;
+  runApiKey.value = config.apiKey;
+  runModel.value = config.defaultModel || "";
+  await loadModels();
 });
+
+async function loadModels() {
+  loadingModels.value = true;
+  models.value = await fetchModels(runProviderUrl.value, runApiKey.value);
+  loadingModels.value = false;
+  if (!runModel.value && models.value.length) runModel.value = models.value[0];
+}
+
+function onProviderChange(url: string) {
+  runProviderUrl.value = url;
+  const p = config.providers.find((pr) => pr.url === url);
+  if (p) runApiKey.value = p.apiKey;
+  loadModels();
+}
 
 async function createSuite() {
   if (!newName.value.trim()) return;
@@ -49,7 +72,7 @@ async function addPrompt() {
 }
 
 async function runSuite() {
-  if (!selected.value || running.value) return;
+  if (!selected.value || running.value || !runModel.value) return;
   const s = selected.value;
   running.value = true;
   results.value = {};
@@ -61,11 +84,11 @@ async function runSuite() {
     try {
       let finalMetrics: RunMetrics | null = null;
       for await (const chunk of streamChat(
-        config.serverUrl, config.apiKey,
-        config.defaultModel || "llama3.2",
+        runProviderUrl.value, runApiKey.value, runModel.value,
         [{ role: "user", content: p.content }]
       )) {
         if (chunk.done) { finalMetrics = chunk.metrics as RunMetrics; break; }
+        // We don't show streaming content in suite mode — just collect metrics
       }
       results.value[p.id] = finalMetrics;
     } catch {
@@ -92,108 +115,118 @@ function avgTtft(): string {
 </script>
 
 <template>
-  <div class="benchmarks-page">
-    <div class="page-header">
-      <h1 class="page-title">Benchmarks</h1>
-      <div class="header-row">
-        <input
-          v-model="newName"
-          class="input"
-          placeholder="Suite name…"
-          @keydown.enter.prevent="createSuite"
-        />
+  <div class="page">
+    <div class="top-bar">
+      <h1 class="title">Benchmarks</h1>
+      <div class="create-row">
+        <input v-model="newName" class="input" placeholder="Suite name…" @keydown.enter.prevent="createSuite" />
         <button class="btn primary" @click="createSuite" :disabled="!newName.trim()">Create</button>
       </div>
     </div>
 
-    <div class="layout">
+    <div class="body">
       <!-- Left: suite list -->
-      <div class="suite-list">
-        <div class="list-label">Suites</div>
-        <div v-if="!suites.suites.length" class="list-empty">No suites yet.</div>
-        <div
-          v-for="s in suites.suites"
-          :key="s.id"
-          class="suite-item"
-          :class="{ active: s.id === selectedId }"
-          @click="selectSuite(s.id)"
-        >
+      <aside class="sidebar">
+        <span class="sidebar-label">Suites</span>
+        <div v-if="!suites.suites.length" class="empty-sidebar">No suites yet.</div>
+        <div v-for="s in suites.suites" :key="s.id" class="suite-card" :class="{ on: s.id === selectedId }" @click="selectSuite(s.id)">
           <div class="suite-name">{{ s.name }}</div>
-          <div class="suite-meta">{{ s.prompts.length }} prompts</div>
+          <div class="suite-count">{{ s.prompts.length }} prompt{{ s.prompts.length !== 1 ? "s" : "" }}</div>
         </div>
-      </div>
+      </aside>
 
-      <!-- Right: suite detail -->
-      <div v-if="selected" class="suite-detail">
-        <div class="detail-header">
+      <!-- Right: detail -->
+      <div v-if="selected" class="detail">
+        <!-- Header -->
+        <div class="detail-head">
           <h2>{{ selected.name }}</h2>
-          <button class="btn ghost btn-sm" @click="suites.remove(selected.id)">Delete</button>
+          <button class="btn ghost sm" @click="suites.remove(selected.id)">Delete suite</button>
         </div>
 
-        <div class="prompt-section">
-          <div class="section-title">Prompts ({{ selected.prompts.length }})</div>
-
-          <div v-if="!selected.prompts.length" class="empty-hint">Add prompts to build your benchmark suite.</div>
-
-          <div v-for="(p, i) in selected.prompts" :key="p.id" class="prompt-card">
-            <div class="prompt-header">
-              <span class="prompt-idx">{{ i + 1 }}</span>
-              <input
-                :value="p.name"
-                class="prompt-name-input"
-                @change="(e) => suites.updatePrompt(selected!.id, p.id, { name: (e.target as HTMLInputElement).value })"
-              />
-              <button class="btn-icon" @click="suites.removePrompt(selected!.id, p.id)" title="Remove prompt">✕</button>
+        <!-- Run configuration -->
+        <section class="card">
+          <div class="card-h">Run configuration</div>
+          <div class="run-config">
+            <div class="field">
+              <label>Provider</label>
+              <select v-model="runProviderUrl" class="sel" @change="onProviderChange(runProviderUrl)">
+                <option v-for="p in config.providers" :key="p.url" :value="p.url">{{ p.label }}</option>
+              </select>
             </div>
-            <textarea
-              :value="p.content"
-              class="prompt-content"
-              rows="2"
-              @change="(e) => suites.updatePrompt(selected!.id, p.id, { content: (e.target as HTMLTextAreaElement).value })"
-            />
-            <div v-if="results[p.id]" class="prompt-result">
-              TPS {{ results[p.id]!.tps.toFixed(1) }} · TTFT {{ (results[p.id]!.ttft / 1000).toFixed(2) }}s · {{ results[p.id]!.completionTokens }} tok · {{ (results[p.id]!.duration / 1000).toFixed(1) }}s
+            <div class="field">
+              <label>Model</label>
+              <select v-model="runModel" class="sel">
+                <option value="" disabled>Select model…</option>
+                <option v-for="m in models" :key="m" :value="m">{{ m }}</option>
+              </select>
             </div>
-            <div v-else-if="results[p.id] === null && running === false" class="prompt-result error">Failed</div>
+            <div class="field actions">
+              <button class="btn primary" @click="runSuite" :disabled="!selected.prompts.length || running || !runModel">
+                {{ running ? "Running…" : `Run (${selected.prompts.length})` }}
+              </button>
+              <span v-if="currentProgress" class="progress">{{ currentProgress }}</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Prompts -->
+        <section class="card">
+          <div class="card-h">Prompts ({{ selected.prompts.length }})</div>
+
+          <div v-if="!selected.prompts.length" class="empty-hint">Add prompts below to build your benchmark suite.</div>
+
+          <div v-for="(p, i) in selected.prompts" :key="p.id" class="prompt">
+            <div class="prompt-head">
+              <span class="idx">{{ i + 1 }}</span>
+              <input :value="p.name" class="name-input" @change="(e) => suites.updatePrompt(selected!.id, p.id, { name: (e.target as HTMLInputElement).value })" />
+              <button class="btn-icon" @click="suites.removePrompt(selected!.id, p.id)" title="Remove">✕</button>
+            </div>
+            <textarea :value="p.content" class="content-input" rows="2" @change="(e) => suites.updatePrompt(selected!.id, p.id, { content: (e.target as HTMLTextAreaElement).value })" />
+            <div v-if="results[p.id]" class="result ok">
+              <span class="badge tps">{{ results[p.id]!.tps.toFixed(1) }} tok/s</span>
+              <span class="badge">{{ (results[p.id]!.ttft / 1000).toFixed(2) }}s TTFT</span>
+              <span class="badge muted">{{ results[p.id]!.completionTokens }} tok</span>
+              <span class="badge muted">{{ (results[p.id]!.duration / 1000).toFixed(1) }}s</span>
+            </div>
+            <div v-else-if="results[p.id] === null && !running" class="result fail">Failed</div>
           </div>
 
-          <div class="add-prompt">
+          <!-- Add prompt -->
+          <div class="add-block">
             <input v-model="newPromptName" class="input" placeholder="Prompt name…" />
-            <textarea v-model="newPromptContent" class="input textarea" rows="2" placeholder="Prompt content…" />
+            <textarea v-model="newPromptContent" class="input area" rows="2" placeholder="Prompt content…" />
             <button class="btn" @click="addPrompt" :disabled="!newPromptName.trim() || !newPromptContent.trim()">Add</button>
           </div>
-        </div>
+        </section>
 
-        <!-- Run section -->
-        <div class="run-section">
-          <div class="server-info">
-            Running against <strong>{{ config.defaultModel || "no model" }}</strong> on <code>{{ config.serverUrl }}</code>
+        <!-- Aggregate -->
+        <section v-if="Object.keys(results).length" class="card">
+          <div class="card-h">Aggregate results</div>
+          <div class="agg">
+            <div class="agg-item">
+              <span class="agg-val">{{ avgTps() }}</span>
+              <span class="agg-lbl">Avg TPS</span>
+            </div>
+            <div class="agg-item">
+              <span class="agg-val">{{ avgTtft() }}</span>
+              <span class="agg-lbl">Avg TTFT</span>
+            </div>
+            <div class="agg-item">
+              <span class="agg-val">{{ selected.prompts.length }}</span>
+              <span class="agg-lbl">Prompts</span>
+            </div>
+            <div class="agg-item">
+              <span class="agg-val" :class="{ good: Object.values(results).filter(Boolean).length === selected.prompts.length }">
+                {{ Object.values(results).filter(Boolean).length }}/{{ selected.prompts.length }}
+              </span>
+              <span class="agg-lbl">Succeeded</span>
+            </div>
           </div>
-          <div class="run-bar">
-            <button
-              class="btn primary"
-              @click="runSuite"
-              :disabled="!selected.prompts.length || running"
-            >
-              {{ running ? "Running…" : `Run Suite (${selected.prompts.length} prompts)` }}
-            </button>
-            <span v-if="currentProgress" class="progress">{{ currentProgress }}</span>
-          </div>
-        </div>
-
-        <!-- Aggregate results -->
-        <div v-if="Object.keys(results).length" class="aggregate">
-          <div class="section-title">Aggregate</div>
-          <div class="agg-grid">
-            <div class="agg-item"><span class="agg-label">Avg TPS</span><span class="agg-value">{{ avgTps() }}</span></div>
-            <div class="agg-item"><span class="agg-label">Avg TTFT</span><span class="agg-value">{{ avgTtft() }}</span></div>
-            <div class="agg-item"><span class="agg-label">Prompts</span><span class="agg-value">{{ selected.prompts.length }}</span></div>
-          </div>
-        </div>
+        </section>
       </div>
 
-      <div v-else class="detail-empty">
-        <p v-if="suites.suites.length">Select a suite from the list.</p>
+      <div v-else class="empty-detail">
+        <p v-if="suites.suites.length">Select a suite from the left.</p>
         <p v-else>Create a suite to get started.</p>
       </div>
     </div>
@@ -201,76 +234,86 @@ function avgTtft(): string {
 </template>
 
 <style scoped>
-.benchmarks-page {
+.page {
   height: 100%; display: flex; flex-direction: column;
   padding: var(--space-4) var(--space-5); gap: var(--space-3);
-  max-width: 1000px; margin: 0 auto; width: 100%; overflow: hidden;
+  max-width: 1100px; margin: 0 auto; width: 100%; overflow: hidden;
 }
 
-.page-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
-.page-title { font-size: 18px; font-weight: 600; }
-.header-row { display: flex; gap: var(--space-2); align-items: center; }
-.header-row .input { width: 200px; }
+.top-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+}
+.title { font-size: 18px; font-weight: 600; }
+.create-row { display: flex; gap: var(--space-2); align-items: center; }
+.create-row .input { width: 200px; }
 
-.layout { flex: 1; display: grid; grid-template-columns: 200px 1fr; gap: var(--space-3); min-height: 0; }
+.body { flex: 1; display: grid; grid-template-columns: 180px 1fr; gap: var(--space-3); min-height: 0; overflow: hidden; }
 
-/* Suite list */
-.suite-list { display: flex; flex-direction: column; gap: var(--space-1); overflow-y: auto; }
-.list-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: var(--space-1); }
-.list-empty { font-size: 12px; color: var(--muted); padding: var(--space-2) 0; }
-.suite-item { padding: var(--space-2) var(--space-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); cursor: pointer; transition: border-color var(--transition-fast); }
-.suite-item:hover { border-color: var(--muted); }
-.suite-item.active { border-color: var(--primary); }
+/* Sidebar */
+.sidebar { display: flex; flex-direction: column; gap: var(--space-1); overflow-y: auto; }
+.sidebar-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: var(--space-1); }
+.empty-sidebar { font-size: 12px; color: var(--muted); padding: var(--space-2) 0; }
+.suite-card { padding: var(--space-2) var(--space-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); cursor: pointer; transition: border-color var(--transition-fast); }
+.suite-card:hover { border-color: var(--muted); }
+.suite-card.on { border-color: var(--primary); }
 .suite-name { font-size: 13px; font-weight: 500; }
-.suite-meta { font-size: 10px; color: var(--muted); margin-top: 1px; }
+.suite-count { font-size: 10px; color: var(--muted); margin-top: 1px; }
 
-/* Suite detail */
-.suite-detail { display: flex; flex-direction: column; gap: var(--space-3); overflow-y: auto; }
-.detail-header { display: flex; align-items: center; justify-content: space-between; }
-.detail-header h2 { font-size: 16px; font-weight: 600; }
-.detail-empty { display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
+/* Detail */
+.detail { display: flex; flex-direction: column; gap: var(--space-3); overflow-y: auto; }
+.detail-head { display: flex; align-items: center; justify-content: space-between; }
+.detail-head h2 { font-size: 16px; font-weight: 600; }
+.empty-detail { display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
 
-/* Prompt section */
-.prompt-section { display: flex; flex-direction: column; gap: var(--space-2); }
-.section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
-.empty-hint { font-size: 12px; color: var(--muted); }
+/* Cards */
+.card { padding: var(--space-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: var(--space-2); }
+.card-h { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 
-.prompt-card { padding: var(--space-2) var(--space-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
-.prompt-header { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1); }
-.prompt-idx { font-size: 10px; color: var(--muted); font-family: var(--font-mono); min-width: 16px; }
-.prompt-name-input { font-weight: 600; font-size: 13px; background: transparent; border: none; color: var(--ink); flex: 1; padding: 2px 4px; border-radius: var(--radius-sm); }
-.prompt-name-input:focus { outline: none; background: var(--bg); }
-.prompt-content { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--ink); font-family: var(--font-mono); font-size: 11px; padding: var(--space-1) var(--space-2); resize: vertical; }
-.prompt-content:focus { outline: none; border-color: var(--primary); }
-.prompt-result { margin-top: var(--space-1); font-size: 11px; font-family: var(--font-mono); color: var(--success); }
-.prompt-result.error { color: var(--danger); }
-
-.add-prompt { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius-md); }
-.add-prompt .input { padding: var(--space-1) var(--space-2); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--ink); font-size: 12px; }
-.add-prompt .input:focus { outline: none; border-color: var(--primary); }
-.add-prompt .textarea { font-family: var(--font-mono); font-size: 11px; resize: vertical; }
-
-/* Run section */
-.run-section { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
-.server-info { font-size: 12px; color: var(--muted); }
-.server-info code { font-family: var(--font-mono); font-size: 11px; }
-.run-bar { display: flex; align-items: center; gap: var(--space-2); }
+/* Run config */
+.run-config { display: flex; gap: var(--space-3); align-items: flex-end; flex-wrap: wrap; }
+.field { display: flex; flex-direction: column; gap: 3px; }
+.field label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.field.actions { margin-left: auto; flex-direction: row; align-items: center; gap: var(--space-2); }
+.sel { padding: var(--space-1) var(--space-2); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--ink); font-family: var(--font-mono); font-size: 12px; min-width: 140px; }
+.sel:focus { outline: none; border-color: var(--primary); }
 .progress { font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
 
+/* Prompts */
+.empty-hint { font-size: 12px; color: var(--muted); }
+.prompt { padding: var(--space-2) var(--space-3); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.prompt-head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1); }
+.idx { font-size: 10px; color: var(--muted); font-family: var(--font-mono); min-width: 16px; }
+.name-input { font-weight: 600; font-size: 13px; background: transparent; border: none; color: var(--ink); flex: 1; padding: 2px 4px; border-radius: var(--radius-sm); }
+.name-input:focus { outline: none; background: var(--surface); }
+.content-input { width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--ink); font-family: var(--font-mono); font-size: 11px; padding: var(--space-1) var(--space-2); resize: vertical; }
+.content-input:focus { outline: none; border-color: var(--primary); }
+
+.result { margin-top: var(--space-1); display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.result.fail { font-size: 11px; color: var(--danger); font-family: var(--font-mono); }
+.badge { font-size: 10px; font-family: var(--font-mono); padding: 1px 6px; border-radius: 3px; background: var(--surface); border: 1px solid var(--border); }
+.badge.tps { color: var(--primary); font-weight: 600; border-color: var(--primary); }
+.badge.muted { color: var(--muted); }
+
+.add-block { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: 1px dashed var(--border); border-radius: var(--radius-md); background: var(--bg); }
+.add-block .input { padding: var(--space-1) var(--space-2); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--ink); font-size: 12px; }
+.add-block .input:focus { outline: none; border-color: var(--primary); }
+.add-block .area { font-family: var(--font-mono); font-size: 11px; resize: vertical; }
+
 /* Aggregate */
-.aggregate { display: flex; flex-direction: column; gap: var(--space-2); }
-.agg-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
-.agg-item { padding: var(--space-2) var(--space-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: 2px; }
-.agg-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
-.agg-value { font-family: var(--font-mono); font-size: 18px; font-weight: 700; color: var(--ink); }
+.agg { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-2); }
+.agg-item { display: flex; flex-direction: column; gap: 2px; }
+.agg-val { font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--ink); }
+.agg-val.good { color: var(--success); }
+.agg-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
 
 /* Shared */
 .input { padding: var(--space-1) var(--space-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--ink); font-size: 13px; }
 .input:focus { outline: none; border-color: var(--primary); }
 
-.btn { padding: var(--space-1) var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--border); font-size: 12px; font-weight: 500; cursor: pointer; transition: background var(--transition-fast); }
+.btn { padding: var(--space-1) var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--border); font-size: 12px; font-weight: 500; cursor: pointer; background: var(--surface); color: var(--ink); transition: background var(--transition-fast); }
 .btn:disabled { opacity: 0.4; cursor: default; }
-.btn-sm { padding: var(--space-1) var(--space-2); font-size: 11px; }
+.btn:hover:not(:disabled) { background: var(--border); }
+.btn.sm { padding: var(--space-1) var(--space-2); font-size: 11px; }
 .btn.primary { background: var(--primary); color: white; border-color: transparent; }
 .btn.primary:hover:not(:disabled) { opacity: 0.85; }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
