@@ -45,13 +45,16 @@ function saveProvider() {
 
   const updated: Provider = { label: editLabel.value.trim(), url: editUrl.value.trim().replace(/\/+$/, ""), apiKey: editKey.value };
 
-  // Update existing or add new
-  const existing = editing.value
-    ? config.providers.find((p) => p.url === editing.value!.url && p.label === editing.value!.label)
-    : null;
+  // If editing and URL changed, remove old entry
+  if (editing.value && editing.value.url !== updated.url) {
+    config.providers = config.providers.filter((p) => p.url !== editing.value!.url || p.label !== editing.value!.label);
+  }
 
-  if (existing) {
-    Object.assign(existing, updated);
+  // Update by URL if exists, otherwise add
+  const byUrl = config.providers.find((p) => p.url === updated.url);
+  if (byUrl) {
+    byUrl.label = updated.label;
+    byUrl.apiKey = updated.apiKey;
   } else {
     config.providers.push(updated);
   }
