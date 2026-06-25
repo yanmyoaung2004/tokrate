@@ -4,6 +4,7 @@ import { useConfigStore } from "@/stores/config";
 import { useHistoryStore } from "@/stores/history";
 import { useToastStore } from "@/stores/toast";
 import { streamChat, fetchModels } from "@/api/client";
+import { renderMarkdown } from "@/utils/markdown";
 import type { ChatMessage, RunMetrics } from "@/types";
 import MetricsBar from "@/components/MetricsBar.vue";
 import SpeedChart from "@/components/SpeedChart.vue";
@@ -219,14 +220,14 @@ function canSave(): boolean {
 
           <div v-if="msg.reasoning && streaming" class="thinking-live">
             <div class="thinking-header">Thinking…</div>
-            <div class="thinking-text">{{ msg.reasoning }}</div>
+            <div class="thinking-text md" v-html="renderMarkdown(msg.reasoning)"></div>
           </div>
           <details v-if="msg.reasoning && !streaming" class="thinking-done" open>
             <summary class="thinking-summary">Show thinking ({{ msg.reasoning.length }} chars)</summary>
-            <div class="thinking-text">{{ msg.reasoning }}</div>
+            <div class="thinking-text md" v-html="renderMarkdown(msg.reasoning)"></div>
           </details>
 
-          <div class="msg-content">{{ msg.content }}</div>
+          <div class="msg-content md" v-html="renderMarkdown(msg.content)"></div>
           <div v-if="msg.metrics" class="msg-stats">
             {{ (msg.metrics.ttft / 1000).toFixed(2) }}s TTFT · {{ msg.metrics.tps.toFixed(1) }} tok/s · {{ msg.metrics.completionTokens }} tok · {{ (msg.metrics.duration / 1000).toFixed(1) }}s
           </div>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { ref, watch, computed } from "vue";
 import { useConfigStore } from "@/stores/config";
 import { useToastStore } from "@/stores/toast";
 import { testConnection, fetchModels } from "@/api/client";
@@ -12,7 +12,25 @@ const testing = ref(false);
 const models = ref<string[]>([]);
 const loadingModels = ref(false);
 
+const urlError = computed(() => {
+  const url = config.serverUrl;
+  if (!url) return "Server URL is required";
+  try {
+    const parsed = new URL(url);
+    if (!["http:", "https:"].includes(parsed.protocol)) return "URL must start with http:// or https://";
+    if (!parsed.hostname) return "Invalid hostname";
+    return "";
+  } catch {
+    return "Invalid URL format";
+  }
+});
+
 async function testConn() {
+  if (urlError.value) {
+    connectionOk.value = false;
+    connectionError.value = urlError.value;
+    return;
+  }
   testing.value = true;
   connectionOk.value = null;
   connectionError.value = "";
@@ -59,9 +77,11 @@ watch(() => config.serverUrl, () => { connectionOk.value = null; });
           id="serverUrl"
           v-model="config.serverUrl"
           class="field-input"
+          :class="{ invalid: urlError && config.serverUrl }"
           placeholder="http://localhost:11434"
           type="url"
         />
+        <p v-if="urlError && config.serverUrl" class="field-error">{{ urlError }}</p>
       </div>
 
       <div class="field">
@@ -201,6 +221,15 @@ watch(() => config.serverUrl, () => { connectionOk.value = null; });
 .field-input:focus {
   outline: none;
   border-color: var(--primary);
+}
+
+.field-input.invalid {
+  border-color: var(--danger);
+}
+
+.field-error {
+  font-size: 11px;
+  color: var(--danger);
 }
 
 .field-with-action {

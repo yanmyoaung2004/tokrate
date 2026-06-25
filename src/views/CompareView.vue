@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { useConfigStore } from "@/stores/config";
 import { useToastStore } from "@/stores/toast";
 import { streamChat } from "@/api/client";
+import { renderMarkdown } from "@/utils/markdown";
 import type { RunMetrics } from "@/types";
 
 interface CompareConfig {
@@ -164,10 +165,10 @@ function clearResults() { results.value = []; }
           </div>
           <details v-if="r.reasoning" class="r-reasoning" :open="r.status === 'running'">
             <summary>Reasoning ({{ r.reasoning.length }} char)</summary>
-            <pre>{{ r.reasoning }}</pre>
+            <div class="md" v-html="renderMarkdown(r.reasoning)"></div>
           </details>
           <div v-if="r.error" class="r-err-text">{{ r.error }}</div>
-          <pre class="r-text">{{ r.response || (r.status === 'running' ? 'Waiting…' : '') }}</pre>
+          <div class="r-text md" v-html="renderMarkdown(r.response)"></div>
         </div>
       </div>
     </div>

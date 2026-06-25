@@ -9,6 +9,7 @@ interface LbRow extends LeaderboardEntry {
 
 const entries = ref<LbRow[]>([]);
 const loading = ref(true);
+const offline = ref(false);
 const sortKey = ref<"tps" | "ttft">("tps");
 const filterEngine = ref("");
 const filterModel = ref("");
@@ -27,6 +28,7 @@ const sorted = computed(() => {
 onMounted(async () => {
   loading.value = true;
   entries.value = await fetchLeaderboard();
+  offline.value = entries.value.length === 0;
   loading.value = false;
 });
 
@@ -40,6 +42,7 @@ function formatMs(ms: number): string {
   <div class="lb-page">
     <div class="page-header">
       <h1 class="page-title">Leaderboard</h1>
+      <span v-if="offline && !loading" class="offline-badge">Offline</span>
       <p class="page-subtitle">Community-sourced local LLM benchmark results.</p>
     </div>
 
@@ -61,7 +64,8 @@ function formatMs(ms: number): string {
     <div v-if="loading" class="loading">Loading...</div>
 
     <div v-else-if="!sorted.length" class="empty">
-      <p>No results yet. Be the first to publish from the History page!</p>
+      <p v-if="offline">Could not reach the leaderboard server. Your published results are saved locally and will sync when the server is available.</p>
+      <p v-else>No results yet. Be the first to publish from the History page!</p>
     </div>
 
     <div v-else class="table-wrap">
@@ -97,6 +101,12 @@ function formatMs(ms: number): string {
 .lb-page { height: 100%; display: flex; flex-direction: column; gap: var(--space-4); max-width: 1000px; margin: 0 auto; width: 100%; padding: var(--space-6); overflow: hidden; }
 .page-title { font-size: 20px; font-weight: 600; }
 .page-subtitle { font-size: 13px; color: var(--muted); }
+
+.offline-badge {
+  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+  background: var(--warning); color: #000; padding: 2px 8px; border-radius: 3px;
+  margin-left: var(--space-2);
+}
 
 .filters { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
 .filter-select { padding: var(--space-1) var(--space-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--ink); font-size: 13px; }
