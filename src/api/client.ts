@@ -1,4 +1,4 @@
-import type { StreamChunk, RunMetrics, ContentPart } from "@/types";
+import type { StreamChunk, RunMetrics, ContentPart, ToolDefinition, ToolCall } from "@/types";
 
 function normalizeUrl(base: string): string {
   return base.replace(/\/+$/, "");
@@ -107,7 +107,7 @@ export async function* streamChat(
   apiKey: string,
   model: string,
   messages: { role: string; content: string | ContentPart[] }[],
-  options?: { temperature?: number; maxTokens?: number; thinking?: boolean; signal?: AbortSignal }
+  options?: { temperature?: number; maxTokens?: number; thinking?: boolean; tools?: ToolDefinition[]; signal?: AbortSignal }
 ): AsyncGenerator<StreamChunk> {
   const base = normalizeUrl(serverUrl);
   const startTime = performance.now();
@@ -115,6 +115,12 @@ export async function* streamChat(
   let completionTokens = 0;
   let inThinking = false;
   let inAnswering = false;
+  let pendingToolCalls: ToolCall[] = [];
+
+  function detectPhase(reasoningContent: string): "thinking" | "answering" {
+    if (reasoningContent) return "thinking";
+    return "answering";
+  }
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -130,7 +136,7 @@ export async function* streamChat(
       stream: true,
       temperature: options?.temperature ?? 0.7,
       max_tokens: options?.maxTokens ?? 2048,
-      ...(options?.thinking === false ? { reasoning_effort: "none" } : {}),
+      ...(options?.tools?.length ? { tools: options.tools } : {}),
     }),
     signal: options?.signal,
   });
@@ -183,8 +189,21 @@ export async function* streamChat(
         const choice = parsed.choices?.[0];
         const delta = choice?.delta?.content || "";
         const reasoningContent = choice?.delta?.reasoning_content || choice?.delta?.reasoning || "";
+        const toolCalls: ToolCall[] | undefined = choice?.delta?.tool_calls || choice?.delta?.function_call ? [{ id: "", type: "function" as const, function: { name: choice.delta.function_call?.name || "", arguments: choice.delta.function_call?.arguments || "" } }] : undefined;
         const finishReason = choice?.finish_reason;
         const usage = parsed.usage;
+
+        // Accumulate tool calls across chunks (they arrive piece by piece)
+        if (toolCalls) {
+          for (const tc of toolCalls) {
+            const existing = pendingToolCalls.find((p) => p.id === tc.id);
+            if (existing) {
+              existing.function.arguments += tc.function.arguments;
+            } else {
+              pendingToolCalls.push({ ...tc, function: { name: tc.function.name, arguments: tc.function.arguments } });
+            }
+          }
+        }
 
         if (delta || reasoningContent) completionTokens++;
 
@@ -208,11 +227,11 @@ export async function* streamChat(
         };
 
         // Track phase transitions BEFORE setting chunk phase
+        // Track phase transitions
         if (reasoningContent && !inThinking && !inAnswering) {
           inThinking = true;
         }
         if (!inThinking && !inAnswering && delta && !reasoningContent) {
-          // No reasoning at all — straight to answering phase
           inAnswering = true;
         }
         if (inThinking && delta && !reasoningContent) {
@@ -223,9 +242,10 @@ export async function* streamChat(
         const chunk: StreamChunk = {
           content: delta,
           reasoningContent,
-          done: !!finishReason || parsed.choices?.[0]?.finish_reason === "stop",
+          toolCalls: finishReason === "tool_calls" ? [...pendingToolCalls] : undefined,
+          done: !!finishReason || parsed.choices?.[0]?.finish_reason === "stop" || finishReason === "tool_calls",
           metrics,
-          phase: inThinking ? "thinking" : "answering",
+          phase: detectPhase(reasoningContent),
           raw: parsed,
         };
 

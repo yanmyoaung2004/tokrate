@@ -11,19 +11,39 @@ export interface TextContent {
 export type ContentPart = TextContent | ImageContent;
 
 export interface ChatMessage {
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant" | "system" | "tool";
   content: string | ContentPart[];
   reasoning?: string;
+  toolCalls?: ToolCall[];
   metrics?: RunMetrics;
 }
 
 export interface StreamChunk {
   content: string;
   reasoningContent?: string;
+  toolCalls?: ToolCall[];
   done: boolean;
   metrics: Partial<RunMetrics>;
   phase: "thinking" | "answering";
   raw?: Record<string, unknown>;
+}
+
+export interface ToolCall {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+export interface ToolDefinition {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
 }
 
 export interface RunMetrics {

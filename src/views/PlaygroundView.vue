@@ -6,6 +6,7 @@ import { useHistoryStore } from "@/stores/history";
 import { useToastStore } from "@/stores/toast";
 import { streamChat, fetchModels } from "@/api/client";
 import { renderMarkdown } from "@/utils/markdown";
+import { TEST_TOOLS } from "@/data/tools";
 import type { ChatMessage, RunMetrics, ContentPart, TextContent } from "@/types";
 import MetricsBar from "@/components/MetricsBar.vue";
 import SpeedChart from "@/components/SpeedChart.vue";
@@ -26,6 +27,8 @@ const loadingModels = ref(false);
 const showCharts = ref(false);
 const showReasoning = ref(true);
 const thinkingEnabled = ref(true);
+const toolsEnabled = ref(false);
+const toolCallValid = ref<boolean | null>(null);
 const thinkingTps = ref<number>();
 const answeringTps = ref<number>();
 const thinkingData = ref<{ time: number; tps: number }[]>([]);
@@ -85,8 +88,11 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
+function formatToolArgs(args: string): string {
+  try { return JSON.stringify(JSON.parse(args), null, 2); } catch { return args + "\n⚠ Invalid JSON"; }
+}
+
 async function copyModel() {
-  if (!selectedModel.value) return;
   try {
     await navigator.clipboard.writeText(selectedModel.value);
     toast.add("Copied: " + selectedModel.value, "success");
@@ -116,6 +122,7 @@ async function send() {
   attachments.value = [];
   const assistantMsg: ChatMessage = { role: "assistant", content: "", reasoning: "" };
   messages.value.push(assistantMsg);
+  toolCallValid.value = null;
   const controller = new AbortController();
   abortController.value = controller;
   streaming.value = true;
@@ -132,11 +139,17 @@ async function send() {
       config.serverUrl, config.apiKey,
       selectedModel.value || config.defaultModel || "llama3.2",
       [{ role: "user", content: messageContent }],
-      { signal: controller.signal, thinking: thinkingEnabled.value }
+      { signal: controller.signal, thinking: thinkingEnabled.value, tools: toolsEnabled.value ? TEST_TOOLS : undefined }
     )) {
       assistantMsg.content += chunk.content;
       if (chunk.reasoningContent) {
         assistantMsg.reasoning = (assistantMsg.reasoning || "") + chunk.reasoningContent;
+      }
+      if (chunk.toolCalls?.length) {
+        assistantMsg.toolCalls = chunk.toolCalls;
+        toolCallValid.value = chunk.toolCalls.every((tc) => {
+          try { JSON.parse(tc.function.arguments); return true; } catch { return false; }
+        });
       }
       liveMetrics.value = { ...chunk.metrics };
       if (chunk.metrics.ttft) showCharts.value = true;
@@ -232,6 +245,14 @@ function canSave(): boolean {
         >
           {{ thinkingEnabled ? "🧠" : "⚡" }}
         </button>
+        <button
+          class="toggle thin"
+          :class="{ on: toolsEnabled }"
+          @click="toolsEnabled = !toolsEnabled"
+          title="Test tool calling with predefined functions"
+        >
+          🛠
+        </button>
       </div>
       <div class="right-group">
         <button v-if="canSave() && !streaming" class="btn btn-sm" @click="saveRun">Save</button>
@@ -286,6 +307,18 @@ function canSave(): boolean {
             <div class="thinking-text md" v-html="renderMarkdown(msg.reasoning)"></div>
           </details>
 
+          <!-- Tool calls -->
+          <div v-if="msg.toolCalls?.length" class="toolcalls">
+            <div class="tclabel">Tool calls</div>
+            <div v-for="tc in msg.toolCalls" :key="tc.id" class="tccard">
+              <div class="tcname">{{ tc.function.name }}</div>
+              <pre class="tcargs">{{ formatToolArgs(tc.function.arguments) }}</pre>
+            </div>
+            <div v-if="toolCallValid !== null" class="tcstatus" :class="toolCallValid ? 'ok' : 'fail'">
+              {{ toolCallValid ? "✔ All tool calls valid JSON" : "✖ Invalid JSON in tool arguments" }}
+            </div>
+          </div>
+
           <div class="msg-content md" v-html="renderMarkdown(msgText(msg.content))"></div>
           <div v-if="msg.metrics" class="msg-stats">
             {{ (msg.metrics.ttft / 1000).toFixed(2) }}s TTFT · {{ msg.metrics.tps.toFixed(1) }} tok/s · {{ msg.metrics.completionTokens }} tok · {{ (msg.metrics.duration / 1000).toFixed(1) }}s
@@ -306,7 +339,7 @@ function canSave(): boolean {
     <div class="input-area">
       <div class="input-wrap">
         <textarea
-          v-model="prompt" placeholder="Type your message…" rows="1"
+          v-model="prompt" :placeholder="toolsEnabled ? 'Ask about weather, math, or search…' : 'Type your message…'" rows="1"
           @keydown.enter.ctrl="send" @keydown.enter.exact.prevent="send"
           :disabled="streaming" class="input-field"
         />
@@ -412,6 +445,16 @@ function canSave(): boolean {
 .thinking-done { margin-bottom: var(--space-2); }
 .thinking-summary { font-size: 11px; font-weight: 500; color: var(--accent); cursor: pointer; }
 .thinking-summary:hover { opacity: 0.8; }
+
+/* Tool calls */
+.toolcalls { margin-bottom: var(--space-2); display: flex; flex-direction: column; gap: var(--space-1); }
+.tclabel { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
+.tccard { padding: var(--space-2); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.tcname { font-size: 12px; font-weight: 600; color: var(--primary); margin-bottom: var(--space-1); }
+.tcargs { font-family: var(--font-mono); font-size: 11px; color: var(--ink); white-space: pre-wrap; word-break: break-word; margin: 0; line-height: 1.4; }
+.tcstatus { font-size: 11px; font-weight: 500; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+.tcstatus.ok { background: color-mix(in oklch, var(--success) 15%, transparent); color: var(--success); }
+.tcstatus.fail { background: color-mix(in oklch, var(--danger) 15%, transparent); color: var(--danger); }
 
 /* Input */
 .input-area { display: flex; flex-direction: column; gap: 2px; }
