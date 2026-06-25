@@ -314,9 +314,12 @@ function canSave(): boolean {
 .empty-hint { font-size: 12px; }
 
 .msg {
-  display: flex; gap: var(--space-2); animation: fadeIn 150ms ease-out;
+  display: flex; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface); border-radius: var(--radius-md);
 }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+.msg.user { background: color-mix(in oklch, var(--primary) 8%, var(--surface)); }
 
 .msg-avatar {
   width: 24px; height: 24px; min-width: 24px; border-radius: 50%;
