@@ -6,6 +6,7 @@ import { streamChat, fetchModels } from "@/api/client";
 import { renderMarkdown } from "@/utils/markdown";
 import type { RunMetrics } from "@/types";
 import QuantizationScanner from "@/components/QuantizationScanner.vue";
+import ComparisonChart from "@/components/ComparisonChart.vue";
 
 interface CompareConfig {
   id: string; label: string; serverUrl: string; apiKey: string;
@@ -209,6 +210,7 @@ function exportResults() {
 
     <!-- Results -->
     <div v-if="results.length" class="results">
+      <ComparisonChart :data="results.filter(r => r.metrics).map(r => ({ label: r.config.label, model: r.config.model, tps: r.metrics!.tps, ttft: r.metrics!.ttft }))" />
       <div class="bars">
         <div v-for="r in results" :key="r.config.id" class="bar-row">
           <span class="bar-label" :title="r.config.model">{{ r.config.label }}</span>
