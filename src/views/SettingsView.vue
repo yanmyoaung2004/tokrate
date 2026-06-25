@@ -1,167 +1,164 @@
 <script setup lang="ts">
-import { ref, watch, computed } from "vue";
-import { useConfigStore } from "@/stores/config";
+import { ref } from "vue";
+import { useConfigStore, type Provider } from "@/stores/config";
 import { useToastStore } from "@/stores/toast";
 import { testConnection, fetchModels } from "@/api/client";
 
 const config = useConfigStore();
 const toast = useToastStore();
-const connectionOk = ref<boolean | null>(null);
-const connectionError = ref("");
-const testing = ref(false);
-const models = ref<string[]>([]);
-const loadingModels = ref(false);
 
-const urlError = computed(() => {
-  const url = config.serverUrl;
-  if (!url) return "Server URL is required";
-  try {
-    const parsed = new URL(url);
-    if (!["http:", "https:"].includes(parsed.protocol)) return "URL must start with http:// or https://";
-    if (!parsed.hostname) return "Invalid hostname";
-    return "";
-  } catch {
-    return "Invalid URL format";
-  }
-});
+const editing = ref<Provider | null>(null);
+const editLabel = ref("");
+const editUrl = ref("");
+const editKey = ref("");
+const isEditing = ref(false);
+const testingIdx = ref<number | null>(null);
+const modelsCache = ref<Record<string, string[]>>({});
 
-async function testConn() {
-  if (urlError.value) {
-    connectionOk.value = false;
-    connectionError.value = urlError.value;
+function startAdd() {
+  isEditing.value = true;
+  editing.value = { label: "", url: "http://localhost:11434", apiKey: "" };
+  editLabel.value = "";
+  editUrl.value = "http://localhost:11434";
+  editKey.value = "";
+}
+
+function startEdit(p: Provider) {
+  isEditing.value = true;
+  editing.value = { ...p };
+  editLabel.value = p.label;
+  editUrl.value = p.url;
+  editKey.value = p.apiKey;
+}
+
+function cancelEdit() {
+  isEditing.value = false;
+  editing.value = null;
+}
+
+function saveProvider() {
+  if (!editLabel.value.trim() || !editUrl.value.trim()) {
+    toast.add("Name and URL are required", "error");
     return;
   }
-  syncProvider();
-  testing.value = true;
-  connectionOk.value = null;
-  connectionError.value = "";
-  try {
-    connectionOk.value = await testConnection(config.serverUrl, config.apiKey);
-    if (connectionOk.value) {
-      toast.add("Connected successfully", "success");
-      await loadModels();
-    } else {
-      connectionError.value = "Server did not respond. Make sure the server is running and the URL is correct.";
-    }
-  } catch (err: unknown) {
-    connectionOk.value = false;
-    const msg = err instanceof Error ? err.message : "Unknown error";
-    if (msg.includes("CORS") || msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
-      connectionError.value = "CORS error: Browser security blocks requests to remote servers. Use Tauri desktop mode or a local server.";
-    } else {
-      connectionError.value = msg;
-    }
-  }
-  testing.value = false;
-}
+  try { new URL(editUrl.value); } catch { toast.add("Invalid URL", "error"); return; }
 
-async function loadModels() {
-  loadingModels.value = true;
-  models.value = await fetchModels(config.serverUrl, config.apiKey);
-  loadingModels.value = false;
-}
+  const updated: Provider = { label: editLabel.value.trim(), url: editUrl.value.trim().replace(/\/+$/, ""), apiKey: editKey.value };
 
-function syncProvider() {
-  const url = config.serverUrl;
-  if (!url) return;
-  const existing = config.providers.find((p) => p.url === url);
+  // Update existing or add new
+  const existing = editing.value
+    ? config.providers.find((p) => p.url === editing.value!.url && p.label === editing.value!.label)
+    : null;
+
   if (existing) {
-    existing.apiKey = config.apiKey;
+    Object.assign(existing, updated);
   } else {
-    const label = `Server ${config.providers.length + 1}`;
-    config.providers.push({ label, url, apiKey: config.apiKey });
+    config.providers.push(updated);
   }
-  config.selectProvider(url, config.apiKey);
+  if (existing) {
+    Object.assign(existing, updated);
+  } else {
+    config.providers.push(updated);
+  }
+  config.selectProvider(updated.url, updated.apiKey);
+  isEditing.value = false;
+  editing.value = null;
+  toast.add("Provider saved", "success");
 }
 
-watch(() => config.serverUrl, () => { connectionOk.value = null; });
+function removeProvider(p: Provider) {
+  config.providers = config.providers.filter((pr) => pr.url !== p.url || pr.label !== p.label);
+  if (config.serverUrl === p.url) {
+    const first = config.providers[0];
+    if (first) config.selectProvider(first.url, first.apiKey);
+  }
+  config.save();
+  toast.add("Provider removed", "info");
+}
+
+async function testProvider(idx: number) {
+  const p = config.providers[idx];
+  testingIdx.value = idx;
+  try {
+    const ok = await testConnection(p.url, p.apiKey);
+    if (ok) {
+      const models = await fetchModels(p.url, p.apiKey);
+      modelsCache.value[p.url] = models;
+      toast.add(`${p.label}: connected (${models.length} models)`, "success");
+    } else {
+      toast.add(`${p.label}: connection failed`, "error");
+    }
+  } catch { toast.add(`${p.label}: connection error`, "error"); }
+  testingIdx.value = null;
+}
 </script>
 
 <template>
-  <div class="page">
-    <h1 class="page-title">Settings</h1>
-    <p class="page-subtitle">Configure your server connection and preferences.</p>
-
-    <div class="settings-section">
-      <h2 class="section-title">Server Connection</h2>
-
-      <div class="field">
-        <label class="field-label" for="serverUrl">Server URL</label>
-        <input
-          id="serverUrl"
-          v-model="config.serverUrl"
-          class="field-input"
-          :class="{ invalid: urlError && config.serverUrl }"
-          placeholder="http://localhost:11434"
-          type="url"
-        />
-        <p v-if="urlError && config.serverUrl" class="field-error">{{ urlError }}</p>
+  <div class="settings-page">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Settings</h1>
+        <p class="page-subtitle">Manage your LLM server connections and preferences.</p>
       </div>
-
-      <div class="field">
-        <label class="field-label" for="apiKey">API Key</label>
-        <input
-          id="apiKey"
-          v-model="config.apiKey"
-          class="field-input"
-          placeholder="Optional"
-          type="password"
-        />
-      </div>
-
-      <div class="field">
-        <label class="field-label" for="model">Default Model</label>
-        <div class="field-with-action">
-          <input
-            id="model"
-            v-model="config.defaultModel"
-            class="field-input"
-            placeholder="llama3.2"
-            list="model-list"
-          />
-          <datalist id="model-list">
-            <option v-for="m in models" :key="m" :value="m" />
-          </datalist>
-          <button
-            class="btn btn-secondary"
-            @click="loadModels"
-            :disabled="loadingModels"
-          >
-            {{ loadingModels ? "Loading..." : "Refresh" }}
-          </button>
-        </div>
-      </div>
-
-      <div class="field">
-        <label class="field-label" for="timeout">Request Timeout (ms)</label>
-        <input
-          id="timeout"
-          v-model.number="config.timeout"
-          class="field-input"
-          type="number"
-          min="5000"
-          max="120000"
-          step="5000"
-        />
-      </div>
-
-      <div class="field">
-        <button class="btn btn-primary" @click="testConn" :disabled="testing">
-          {{ testing ? "Testing..." : "Test Connection" }}
-        </button>
-        <span v-if="connectionOk === true" class="status-ok">Connected</span>
-        <span v-else-if="connectionOk === false" class="status-err">Connection failed</span>
-      </div>
-      <p v-if="connectionError" class="error-msg">{{ connectionError }}</p>
+      <button class="btn primary" @click="startAdd">+ Add Provider</button>
     </div>
 
-    <div class="settings-section">
+    <!-- Provider editor -->
+    <div v-if="isEditing" class="editor-panel">
+      <h2 class="editor-title">{{ editing ? "Edit" : "New" }} Provider</h2>
+      <div class="editor-fields">
+        <div class="field">
+          <label>Name</label>
+          <input v-model="editLabel" class="input" placeholder="Ollama Local, vLLM Server…" />
+        </div>
+        <div class="field">
+          <label>Server URL</label>
+          <input v-model="editUrl" class="input mono" placeholder="http://localhost:11434" />
+        </div>
+        <div class="field">
+          <label>API Key (optional)</label>
+          <input v-model="editKey" class="input mono" placeholder="sk-…" type="password" />
+        </div>
+      </div>
+      <div class="editor-actions">
+        <button class="btn" @click="cancelEdit">Cancel</button>
+        <button class="btn primary" @click="saveProvider">Save</button>
+      </div>
+    </div>
+
+    <!-- Provider list -->
+    <div class="section">
+      <h2 class="section-title">Providers</h2>
+      <div v-if="!config.providers.length" class="empty">No providers configured. Click "+ Add Provider" to add one.</div>
+      <div v-for="(p, i) in config.providers" :key="p.url + p.label" class="provider-card">
+        <div class="provider-info">
+          <span class="provider-name">{{ p.label }}</span>
+          <span class="provider-url mono">{{ p.url }}</span>
+          <span v-if="p.apiKey" class="provider-key">key set</span>
+          <span v-if="modelsCache[p.url]?.length" class="provider-models">{{ modelsCache[p.url].length }} models</span>
+        </div>
+        <div class="provider-actions">
+          <button class="btn sm" @click="testProvider(i)" :disabled="testingIdx === i" :title="testingIdx === i ? 'Testing…' : 'Test connection'">
+            {{ testingIdx === i ? "…" : "⟳" }}
+          </button>
+          <button class="btn sm" @click="startEdit(p)" title="Edit">✎</button>
+          <button class="btn sm danger" @click="removeProvider(p)" title="Remove">✕</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Preferences -->
+    <div class="section">
       <h2 class="section-title">Preferences</h2>
-      <div class="field">
-        <label class="field-label">Theme</label>
-        <button class="btn btn-secondary" @click="config.toggleTheme()">
-          Switch to {{ config.theme === "dark" ? "Light" : "Dark" }}
+      <div class="pref-row">
+        <span class="pref-label">Theme</span>
+        <button class="btn" @click="config.toggleTheme()">
+          {{ config.theme === "dark" ? "☀ Light" : "☾ Dark" }}
         </button>
+      </div>
+      <div class="pref-row">
+        <span class="pref-label">Request timeout</span>
+        <input v-model.number="config.timeout" type="number" min="5000" max="120000" step="5000" class="input mono" style="width:100px" />
       </div>
     </div>
   </div>
@@ -169,132 +166,82 @@ watch(() => config.serverUrl, () => { connectionOk.value = null; });
 
 <style scoped>
 .settings-page {
-  height: 100%;
-  overflow-y: auto;
-  padding: var(--space-6);
-  max-width: 600px;
+  height: 100%; overflow-y: auto; padding: var(--space-5) var(--space-6);
+  max-width: 640px; display: flex; flex-direction: column; gap: var(--space-5);
 }
 
-.page {
-  height: 100%;
-  overflow-y: auto;
-  padding: var(--space-6);
-  max-width: 600px;
+.page-header {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4);
 }
+.page-title { font-size: 20px; font-weight: 600; }
+.page-subtitle { font-size: 13px; color: var(--muted); margin-top: 2px; }
 
-.page-title {
-  font-size: 20px;
-  font-weight: 600;
-  margin-bottom: var(--space-2);
+/* Editor panel */
+.editor-panel {
+  background: var(--surface); border: 1px solid var(--primary);
+  border-radius: var(--radius-md); padding: var(--space-4);
+  display: flex; flex-direction: column; gap: var(--space-3);
 }
+.editor-title { font-size: 14px; font-weight: 600; }
+.editor-fields { display: flex; flex-direction: column; gap: var(--space-3); }
+.editor-actions { display: flex; gap: var(--space-2); justify-content: flex-end; }
 
-.page-subtitle {
-  color: var(--muted);
-  margin-bottom: var(--space-6);
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+
+.input {
+  padding: var(--space-2) var(--space-3); background: var(--bg);
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  color: var(--ink); font-family: var(--font-ui); font-size: 13px;
 }
+.input:focus { outline: none; border-color: var(--primary); }
+.input.mono { font-family: var(--font-mono); font-size: 12px; }
 
-.settings-section {
-  margin-bottom: var(--space-8);
-}
-
+/* Section */
+.section { display: flex; flex-direction: column; gap: var(--space-3); }
 .section-title {
-  font-size: 14px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-  margin-bottom: var(--space-4);
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--border);
+  font-size: 13px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--muted);
 }
+.empty { font-size: 13px; color: var(--muted); padding: var(--space-4) 0; }
 
-.field {
-  margin-bottom: var(--space-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+/* Provider card */
+.provider-card {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--space-3); background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  gap: var(--space-3);
 }
-
-.field-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ink);
+.provider-info {
+  display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0;
 }
+.provider-name { font-weight: 600; font-size: 13px; }
+.provider-url { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.provider-key { font-size: 10px; color: var(--warning); font-family: var(--font-mono); }
+.provider-models { font-size: 10px; color: var(--success); font-family: var(--font-mono); }
+.mono { font-family: var(--font-mono); }
 
-.field-input {
-  padding: var(--space-2) var(--space-3);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--ink);
-  font-family: var(--font-ui);
-  font-size: 14px;
-  max-width: 400px;
+.provider-actions { display: flex; gap: var(--space-1); flex-shrink: 0; }
+
+/* Preference row */
+.pref-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--space-3); background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius-md);
 }
+.pref-label { font-size: 13px; font-weight: 500; }
 
-.field-input:focus {
-  outline: none;
-  border-color: var(--primary);
-}
-
-.field-input.invalid {
-  border-color: var(--danger);
-}
-
-.field-error {
-  font-size: 11px;
-  color: var(--danger);
-}
-
-.field-with-action {
-  display: flex;
-  gap: var(--space-2);
-  align-items: center;
-}
-
+/* Shared buttons */
 .btn {
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-md);
-  border: 1px solid transparent;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
+  padding: var(--space-1) var(--space-3); border-radius: var(--radius-md);
+  border: 1px solid var(--border); font-size: 12px; font-weight: 500;
+  cursor: pointer; background: var(--surface); color: var(--ink);
   transition: background var(--transition-fast);
 }
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.btn-primary {
-  background: var(--primary);
-  color: white;
-}
-
-.btn-primary:hover:not(:disabled) {
-  opacity: 0.9;
-}
-
-.btn-secondary {
-  background: var(--surface);
-  border-color: var(--border);
-  color: var(--ink);
-}
-
-.btn-secondary:hover {
-  background: var(--border);
-}
-
-.status-ok {
-  color: var(--success);
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.status-err {
-  color: var(--danger);
-  font-size: 13px;
-  font-weight: 500;
-}
+.btn:hover { background: var(--border); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+.btn.sm { padding: var(--space-1) var(--space-2); font-size: 11px; }
+.btn.primary { background: var(--primary); color: white; border-color: transparent; }
+.btn.primary:hover { opacity: 0.85; }
+.btn.danger:hover { background: var(--danger); color: white; border-color: transparent; }
 </style>
