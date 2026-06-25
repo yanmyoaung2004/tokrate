@@ -216,7 +216,7 @@ function clearResults() { results.value = []; }
 .right { display: flex; align-items: center; gap: var(--space-2); }
 .progress { font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
 
-.config-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--space-2); }
+.config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
 .card { padding: var(--space-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
 .add-card { display: flex; align-items: center; justify-content: center; font-size: 24px; color: var(--muted); cursor: pointer; min-height: 80px; }
 .add-card:hover { border-color: var(--primary); color: var(--primary); }
