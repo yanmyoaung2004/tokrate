@@ -7,12 +7,12 @@ const route = useRoute();
 const config = useConfigStore();
 
 const navItems = [
-  { path: "/", label: "Playground", icon: ">" },
-  { path: "/compare", label: "Compare", icon: "=" },
-  { path: "/benchmarks", label: "Benchmarks", icon: "~" },
-  { path: "/history", label: "History", icon: "*" },
-  { path: "/leaderboard", label: "Leaderboard", icon: "#" },
-  { path: "/settings", label: "Settings", icon: "@" },
+  { path: "/", label: "Playground", icon: "▶" },
+  { path: "/compare", label: "Compare", icon: "⇄" },
+  { path: "/benchmarks", label: "Benchmarks", icon: "⊕" },
+  { path: "/history", label: "History", icon: "↻" },
+  { path: "/leaderboard", label: "Leaderboard", icon: "⊞" },
+  { path: "/settings", label: "Settings", icon: "⚙" },
 ];
 </script>
 
@@ -111,11 +111,10 @@ const navItems = [
 }
 
 .nav-icon {
-  font-family: var(--font-mono);
   width: 20px;
   text-align: center;
-  font-size: 12px;
-  opacity: 0.6;
+  font-size: 14px;
+  opacity: 0.7;
 }
 
 .nav-label {

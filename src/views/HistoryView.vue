@@ -79,8 +79,9 @@ function formatMs(ms: number): string {
     <div v-if="!history.loaded" class="loading">Loading...</div>
 
     <div v-else-if="!history.runs.length" class="empty-state">
-      <p>No saved runs yet.</p>
-      <p class="sub">Run a benchmark in the Playground and click "Save Run".</p>
+      <div class="empty-icon">↻</div>
+      <h3 class="empty-title">No saved runs yet</h3>
+      <p class="empty-desc">Run a benchmark in the Playground and click "Save Run" to see it here.</p>
     </div>
 
     <div v-else class="history-layout">

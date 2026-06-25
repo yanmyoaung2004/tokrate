@@ -217,9 +217,15 @@ function canSave(): boolean {
 
     <!-- Chat -->
     <div class="chat-area">
-      <div v-if="!messages.length" class="empty">
-        <p class="empty-title">Ready</p>
-        <p class="empty-hint">Type a message and press Enter to begin.</p>
+      <div v-if="!selectedModel && !loadingModels" class="empty-state">
+        <div class="empty-icon">▷</div>
+        <h3 class="empty-title">No model selected</h3>
+        <p class="empty-desc">Select a provider and model from the top bar, or add a provider in Settings.</p>
+      </div>
+      <div v-else-if="!messages.length" class="empty-state">
+        <div class="empty-icon">▷</div>
+        <h3 class="empty-title">Ready</h3>
+        <p class="empty-desc">Type a message and press Enter to begin.</p>
       </div>
 
       <div v-for="(msg, i) in messages" :key="i" class="msg" :class="msg.role">
@@ -305,11 +311,8 @@ function canSave(): boolean {
   gap: var(--space-2); min-height: 0; padding: 2px 0;
 }
 
-.empty {
-  flex: 1; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: var(--space-1);
-  color: var(--muted);
-}
+
+
 .empty-title { font-size: 16px; font-weight: 600; }
 .empty-hint { font-size: 12px; }
 

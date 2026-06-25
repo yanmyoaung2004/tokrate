@@ -128,7 +128,7 @@ async function testProvider(idx: number) {
 
       <!-- Empty state -->
       <div v-if="!config.providers.length" class="empty-state">
-        <div class="empty-icon">⚡</div>
+        <div class="empty-icon">⚙</div>
         <h3 class="empty-title">No providers yet</h3>
         <p class="empty-desc">Add your first LLM server to get started. TokRate works with any OpenAI-compatible API — Ollama, vLLM, llama.cpp, LM Studio, SGLang.</p>
         <button class="btn primary" @click="startAdd">+ Add Provider</button>

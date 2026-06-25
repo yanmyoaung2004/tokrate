@@ -140,7 +140,7 @@ function avgTtft(): string {
       <!-- Left: suite list -->
       <aside class="sidebar">
         <span class="sidebar-label">Suites</span>
-        <div v-if="!suites.suites.length" class="empty-sidebar">No suites yet.</div>
+        <div v-if="!suites.suites.length" class="empty-state-sidebar">No suites yet. Create one above.</div>
         <div v-for="s in suites.suites" :key="s.id" class="suite-card" :class="{ on: s.id === selectedId }" @click="selectSuite(s.id)">
           <div class="suite-name">{{ s.name }}</div>
           <div class="suite-count">{{ s.prompts.length }} prompt{{ s.prompts.length !== 1 ? "s" : "" }}</div>

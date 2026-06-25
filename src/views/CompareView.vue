@@ -231,8 +231,10 @@ function exportResults() {
       </div>
     </div>
 
-    <div v-else class="empty">
-      <p>Add configs, enter a prompt, and run.</p>
+    <div v-else class="empty-state">
+      <div class="empty-icon">⊞</div>
+      <h3 class="empty-title">No results yet</h3>
+      <p class="empty-desc">Add configurations on the left, enter a prompt below, and click Run.</p>
     </div>
   </div>
 </template>
@@ -294,7 +296,8 @@ function exportResults() {
 .r-err-text { font-size: 11px; color: var(--danger); margin-bottom: var(--space-1); }
 .r-text { flex: 1; overflow-y: auto; font-family: var(--font-mono); font-size: 11px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; background: var(--bg); padding: var(--space-2); border-radius: var(--radius-sm); }
 
-.empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
+
+
 
 .btn { padding: var(--space-1) var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--border); font-size: 11px; font-weight: 500; cursor: pointer; transition: background var(--transition-fast); }
 .btn:disabled { opacity: 0.4; cursor: default; }

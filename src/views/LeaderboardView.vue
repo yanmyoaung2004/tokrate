@@ -63,7 +63,7 @@ function formatMs(ms: number): string {
 
     <div v-if="loading" class="loading">Loading...</div>
 
-    <div v-else-if="!sorted.length" class="empty">
+    <div v-else-if="!sorted.length" class="empty-state">
       <p v-if="offline">Could not reach the leaderboard server. Your published results are saved locally and will sync when the server is available.</p>
       <p v-else>No results yet. Be the first to publish from the History page!</p>
     </div>
@@ -115,7 +115,7 @@ function formatMs(ms: number): string {
 .sort-btn { padding: var(--space-1) var(--space-3); font-size: 12px; font-weight: 500; background: transparent; border: none; color: var(--muted); cursor: pointer; }
 .sort-btn.active { background: var(--primary); color: white; }
 
-.loading, .empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+.loading { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); }
 
 .table-wrap { flex: 1; overflow-y: auto; }
 .lb-table { width: 100%; border-collapse: collapse; }
