@@ -5,6 +5,7 @@ import { useHistoryStore } from "@/stores/history";
 import { useToastStore } from "@/stores/toast";
 import type { BenchmarkRun } from "@/types";
 import PublishDialog from "@/components/PublishDialog.vue";
+import PerformanceTimeline from "@/components/PerformanceTimeline.vue";
 
 const router = useRouter();
 const history = useHistoryStore();
@@ -13,6 +14,7 @@ const selectedRun = ref<BenchmarkRun | null>(null);
 const publishRun = ref<BenchmarkRun | null>(null);
 const search = ref("");
 const sourceFilter = ref<"all" | "playground" | "proxy">("all");
+const viewMode = ref<"list" | "timeline">("list");
 
 const filteredRuns = computed(() => {
   let runs = history.runs;
@@ -74,15 +76,18 @@ function formatMs(ms: number): string {
   <div class="history-page">
     <div class="page-header">
       <h1 class="page-title">History</h1>
-      <button
-        v-if="history.runs.length"
-        class="btn btn-ghost btn-sm"
-        @click="handleClearAll"
-      >
-        Clear All
-      </button>
+      <div class="header-right">
+        <div class="view-tabs">
+          <button class="view-tab" :class="{ active: viewMode === 'list' }" @click="viewMode = 'list'">List</button>
+          <button class="view-tab" :class="{ active: viewMode === 'timeline' }" @click="viewMode = 'timeline'">Timeline</button>
+        </div>
+        <button v-if="history.runs.length" class="btn btn-ghost btn-sm" @click="handleClearAll">Clear All</button>
+      </div>
     </div>
 
+    <PerformanceTimeline v-if="viewMode === 'timeline' && filteredRuns.length" :runs="filteredRuns" />
+
+    <template v-if="viewMode === 'list'">
     <div v-if="!history.loaded" class="loading">Loading...</div>
 
     <div v-else-if="!history.runs.length" class="empty-state">
@@ -177,6 +182,7 @@ function formatMs(ms: number): string {
         <p>Select a run to view details.</p>
       </div>
     </div>
+    </template>
   </div>
 </template>
 
@@ -195,6 +201,12 @@ function formatMs(ms: number): string {
   justify-content: space-between;
   margin-bottom: var(--space-4);
 }
+.header-right { display: flex; align-items: center; gap: var(--space-2); }
+.view-tabs { display: flex; gap: 0; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+.view-tab { padding: var(--space-1) var(--space-2); font-size: 10px; font-weight: 500; background: transparent; color: var(--muted); cursor: pointer; border: none; }
+.view-tab:hover { background: var(--surface); }
+.view-tab.active { background: var(--surface); color: var(--ink); font-weight: 600; }
+.view-tab + .view-tab { border-left: 1px solid var(--border); }
 
 .page-title {
   font-size: 20px;
