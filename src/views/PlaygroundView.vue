@@ -6,7 +6,7 @@ import { useHistoryStore } from "@/stores/history";
 import { useToastStore } from "@/stores/toast";
 import { streamChat, fetchModels } from "@/api/client";
 import { renderMarkdown } from "@/utils/markdown";
-import type { ChatMessage, RunMetrics } from "@/types";
+import type { ChatMessage, RunMetrics, ContentPart, TextContent } from "@/types";
 import MetricsBar from "@/components/MetricsBar.vue";
 import SpeedChart from "@/components/SpeedChart.vue";
 
@@ -32,6 +32,32 @@ const thinkingData = ref<{ time: number; tps: number }[]>([]);
 const answeringData = ref<{ time: number; tps: number }[]>([]);
 const currentPhase = ref<"thinking" | "answering">("thinking");
 const hasReasoning = computed(() => messages.value.some((m) => m.reasoning));
+const attachments = ref<{ id: string; dataUrl: string; type: string; name: string }[]>([]);
+const fileInput = ref<HTMLInputElement | null>(null);
+
+function pickFile() { fileInput.value?.click(); }
+
+function onFilePicked(e: Event) {
+  const input = e.target as HTMLInputElement;
+  if (!input.files?.length) return;
+  for (const file of Array.from(input.files)) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      attachments.value.push({
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 4),
+        dataUrl: reader.result as string,
+        type: file.type,
+        name: file.name,
+      });
+    };
+    reader.readAsDataURL(file);
+  }
+  input.value = "";
+}
+
+function removeAttachment(id: string) {
+  attachments.value = attachments.value.filter((a) => a.id !== id);
+}
 
 onMounted(async () => {
   await loadModels();
@@ -50,6 +76,11 @@ async function loadModels() {
   loadingModels.value = false;
 }
 
+function msgText(content: string | ContentPart[]): string {
+  if (typeof content === "string") return content;
+  return content.filter((p): p is TextContent => p.type === "text").map((p) => p.text).join("\n");
+}
+
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
@@ -66,10 +97,23 @@ async function copyModel() {
 
 async function send() {
   if (!prompt.value.trim() || streaming.value) return;
-  const userMsg: ChatMessage = { role: "user", content: prompt.value };
-  messages.value.push(userMsg);
+
+  // Build content: plain string or content array with images
   const currentPrompt = prompt.value;
+  let messageContent: string | ContentPart[];
+  if (attachments.value.length) {
+    messageContent = [{ type: "text", text: currentPrompt }];
+    for (const att of attachments.value) {
+      messageContent.push({ type: "image_url", image_url: { url: att.dataUrl } });
+    }
+  } else {
+    messageContent = currentPrompt;
+  }
+
+  const userMsg: ChatMessage = { role: "user", content: messageContent };
+  messages.value.push(userMsg);
   prompt.value = "";
+  attachments.value = [];
   const assistantMsg: ChatMessage = { role: "assistant", content: "", reasoning: "" };
   messages.value.push(assistantMsg);
   const controller = new AbortController();
@@ -87,7 +131,7 @@ async function send() {
     for await (const chunk of streamChat(
       config.serverUrl, config.apiKey,
       selectedModel.value || config.defaultModel || "llama3.2",
-      [{ role: "user", content: currentPrompt }],
+      [{ role: "user", content: messageContent }],
       { signal: controller.signal, thinking: thinkingEnabled.value }
     )) {
       assistantMsg.content += chunk.content;
@@ -143,7 +187,7 @@ async function saveRun() {
   await history.addRun({
     id: generateId(), timestamp: Date.now(),
     engine: config.serverUrl, model: selectedModel.value || config.defaultModel || "unknown",
-    prompt: userMsg.content, response: assistantMsg.content,
+    prompt: String(msgText(userMsg.content as any)), response: String(assistantMsg.content),
     tps: assistantMsg.metrics.tps, ttft: assistantMsg.metrics.ttft,
     tpot: assistantMsg.metrics.tpot,
     promptTokens: assistantMsg.metrics.promptTokens,
@@ -242,11 +286,19 @@ function canSave(): boolean {
             <div class="thinking-text md" v-html="renderMarkdown(msg.reasoning)"></div>
           </details>
 
-          <div class="msg-content md" v-html="renderMarkdown(msg.content)"></div>
+          <div class="msg-content md" v-html="renderMarkdown(msgText(msg.content))"></div>
           <div v-if="msg.metrics" class="msg-stats">
             {{ (msg.metrics.ttft / 1000).toFixed(2) }}s TTFT · {{ msg.metrics.tps.toFixed(1) }} tok/s · {{ msg.metrics.completionTokens }} tok · {{ (msg.metrics.duration / 1000).toFixed(1) }}s
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Attachments -->
+    <div v-if="attachments.length" class="attachments">
+      <div v-for="att in attachments" :key="att.id" class="attachment-thumb">
+        <img :src="att.dataUrl" class="thumb-img" />
+        <button class="thumb-remove" @click="removeAttachment(att.id)" title="Remove">✕</button>
       </div>
     </div>
 
@@ -258,11 +310,13 @@ function canSave(): boolean {
           @keydown.enter.ctrl="send" @keydown.enter.exact.prevent="send"
           :disabled="streaming" class="input-field"
         />
+        <button class="attach-btn" @click="pickFile" title="Attach image">⊞</button>
         <button v-if="streaming" class="send-btn stop" @click="stop" title="Stop">■</button>
         <button v-else class="send-btn" @click="send" :disabled="!prompt.trim()" title="Send">→</button>
       </div>
       <p class="input-hint">Enter to send · Ctrl+Enter for newline</p>
     </div>
+    <input ref="fileInput" type="file" accept="image/*" multiple style="display:none" @change="onFilePicked" />
   </div>
 </template>
 
@@ -387,6 +441,15 @@ function canSave(): boolean {
 .send-btn.stop { background: var(--danger); font-size: 11px; }
 
 .input-hint { font-size: 10px; color: var(--muted); text-align: right; }
+
+/* Attachments */
+.attachments { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.attachment-thumb { position: relative; width: 64px; height: 64px; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+.thumb-img { width: 100%; height: 100%; object-fit: cover; }
+.thumb-remove { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border-radius: 50%; border: none; background: rgba(0,0,0,0.6); color: white; font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; }
+
+.attach-btn { width: 30px; height: 30px; min-width: 30px; border-radius: 50%; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background var(--transition-fast), color var(--transition-fast); }
+.attach-btn:hover { background: var(--surface); color: var(--ink); }
 
 /* Buttons */
 .btn {

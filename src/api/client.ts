@@ -1,4 +1,4 @@
-import type { StreamChunk, RunMetrics } from "@/types";
+import type { StreamChunk, RunMetrics, ContentPart } from "@/types";
 
 function normalizeUrl(base: string): string {
   return base.replace(/\/+$/, "");
@@ -106,7 +106,7 @@ export async function* streamChat(
   serverUrl: string,
   apiKey: string,
   model: string,
-  messages: { role: string; content: string }[],
+  messages: { role: string; content: string | ContentPart[] }[],
   options?: { temperature?: number; maxTokens?: number; thinking?: boolean; signal?: AbortSignal }
 ): AsyncGenerator<StreamChunk> {
   const base = normalizeUrl(serverUrl);

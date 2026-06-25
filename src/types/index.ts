@@ -1,6 +1,18 @@
+export interface ImageContent {
+  type: "image_url";
+  image_url: { url: string };
+}
+
+export interface TextContent {
+  type: "text";
+  text: string;
+}
+
+export type ContentPart = TextContent | ImageContent;
+
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
-  content: string;
+  content: string | ContentPart[];
   reasoning?: string;
   metrics?: RunMetrics;
 }
