@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { useConfigStore, type Provider } from "@/stores/config";
 import { useToastStore } from "@/stores/toast";
 import { testConnection, fetchModels } from "@/api/client";
+import { scanLocalEngines, type DiscoveredEngine } from "@/api/discovery";
 
 const config = useConfigStore();
 const toast = useToastStore();
@@ -14,6 +15,41 @@ const editKey = ref("");
 const isEditing = ref(false);
 const testingIdx = ref<number | null>(null);
 const modelsCache = ref<Record<string, string[]>>({});
+const scanning = ref(false);
+const scanProgress = ref(0);
+const scanTotal = ref(0);
+const discovered = ref<DiscoveredEngine[]>([]);
+const showScan = ref(false);
+
+async function startScan() {
+  scanning.value = true;
+  discovered.value = [];
+  scanProgress.value = 0;
+  scanTotal.value = 5;
+  try {
+    discovered.value = await scanLocalEngines((found, total) => {
+      scanProgress.value = found;
+      scanTotal.value = total;
+    });
+    if (discovered.value.length) toast.add(`Found ${discovered.value.length} local server${discovered.value.length > 1 ? "s" : ""}`, "success");
+    else toast.add("No local LLM servers found", "info");
+  } catch {
+    toast.add("Scan failed", "error");
+  }
+  scanning.value = false;
+  showScan.value = true;
+}
+
+function addDiscovered(d: DiscoveredEngine) {
+  if (config.providers.some((p) => p.url === d.serverUrl)) {
+    toast.add(`${d.label} already added`, "info");
+    return;
+  }
+  config.providers.push({ label: d.label, url: d.serverUrl, apiKey: "" });
+  config.save();
+  toast.add(`Added ${d.label}`, "success");
+  discovered.value = discovered.value.filter((e) => e.url !== d.url);
+}
 
 function startAdd() {
   isEditing.value = true;
@@ -124,6 +160,7 @@ async function testProvider(idx: number) {
     <div class="section">
       <div class="section-h">
         <h2 class="section-title">Providers</h2>
+        <button v-if="config.providers.length" class="btn sm" @click="startScan" :disabled="scanning">Scan local</button>
       </div>
 
       <!-- Empty state -->
@@ -131,7 +168,31 @@ async function testProvider(idx: number) {
         <div class="empty-icon">⚙</div>
         <h3 class="empty-title">No providers yet</h3>
         <p class="empty-desc">Add your first LLM server to get started. TokRate works with any OpenAI-compatible API — Ollama, vLLM, llama.cpp, LM Studio, SGLang.</p>
-        <button class="btn primary" @click="startAdd">+ Add Provider</button>
+        <div class="empty-actions">
+          <button class="btn primary" @click="startAdd">+ Add Provider</button>
+          <button class="btn" @click="startScan" :disabled="scanning">Scan for local servers</button>
+        </div>
+      </div>
+
+      <!-- Scanner results (shown even when providers exist) -->
+      <div v-if="scanning" class="scan-card">
+        <span class="scan-title">Scanning local ports…</span>
+        <div class="scan-bar"><div class="scan-fill" :style="{ width: (scanTotal > 0 ? (scanProgress / scanTotal) * 100 : 0) + '%' }"></div></div>
+        <span class="scan-progress">Port {{ scanProgress + 1 }} of {{ scanTotal }}</span>
+      </div>
+
+      <div v-if="discovered.length && !scanning" class="scan-results">
+        <div class="scan-h">
+          <span class="scan-title">Found {{ discovered.length }} server{{ discovered.length > 1 ? "s" : "" }}</span>
+          <button class="btn sm" @click="startScan">Rescan</button>
+        </div>
+        <div v-for="d in discovered" :key="d.port" class="discovered-card">
+          <div class="disc-info">
+            <span class="disc-name">{{ d.label }}</span>
+            <span class="disc-models">{{ d.models.length }} model{{ d.models.length !== 1 ? "s" : "" }}</span>
+          </div>
+          <button class="btn primary sm" @click="addDiscovered(d)">Add</button>
+        </div>
       </div>
       <div v-for="(p, i) in config.providers" :key="p.url + p.label" class="provider-card">
         <div class="provider-info">
@@ -215,6 +276,21 @@ async function testProvider(idx: number) {
 .empty-icon { font-size: 32px; opacity: 0.5; }
 .empty-title { font-size: 16px; font-weight: 600; }
 .empty-desc { font-size: 13px; color: var(--muted); max-width: 400px; line-height: 1.5; }
+
+.empty-actions { display: flex; gap: var(--space-2); margin-top: var(--space-1); }
+
+/* Scanner */
+.scan-card { padding: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: var(--space-2); }
+.scan-title { font-size: 13px; font-weight: 500; }
+.scan-bar { height: 4px; background: var(--bg); border-radius: 2px; overflow: hidden; }
+.scan-fill { height: 100%; background: var(--primary); border-radius: 2px; transition: width 300ms ease; }
+.scan-progress { font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
+.scan-h { display: flex; align-items: center; justify-content: space-between; }
+.scan-results { display: flex; flex-direction: column; gap: var(--space-2); }
+.discovered-card { display: flex; align-items: center; justify-content: space-between; padding: var(--space-2) var(--space-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.disc-info { display: flex; flex-direction: column; gap: 1px; }
+.disc-name { font-size: 13px; font-weight: 500; }
+.disc-models { font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
 
 .section-h { display: flex; align-items: center; justify-content: space-between; }
 
