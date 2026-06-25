@@ -7,6 +7,9 @@ export interface ResultEntry {
   engine: string;
   model: string;
   quantization?: string;
+  os?: string;
+  cpu?: string;
+  ram?: string;
   gpu?: string;
   tps: number;
   ttft: number;
@@ -88,6 +91,8 @@ export default {
       const sort = url.searchParams.get("sort") || "tps";
       const engine = url.searchParams.get("engine");
       const model = url.searchParams.get("model");
+      const osFilter = url.searchParams.get("os");
+      const gpuFilter = url.searchParams.get("gpu");
 
       let ids: string[];
 
@@ -100,11 +105,15 @@ export default {
       }
 
       // Fetch all results in parallel
-      const results: ResultEntry[] = (
+      let results: ResultEntry[] = (
         await Promise.all(ids.map((id) => env.LEADERBOARD.get(`result:${id}`)))
       )
         .filter((r): r is string => r !== null)
         .map((r) => JSON.parse(r));
+
+      // Apply hardware filters
+      if (osFilter) results = results.filter((r) => r.os?.toLowerCase().includes(osFilter.toLowerCase()));
+      if (gpuFilter) results = results.filter((r) => r.gpu?.toLowerCase().includes(gpuFilter.toLowerCase()));
 
       // Sort
       if (sort === "ttft") {

@@ -102,7 +102,10 @@ export interface LeaderboardEntry {
   engine: string;
   model: string;
   quantization?: string;
-  gpu: string;
+  os?: string;
+  cpu?: string;
+  ram?: string;
+  gpu?: string;
   tps: number;
   ttft: number;
   timestamp: number;

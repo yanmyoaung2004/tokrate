@@ -13,14 +13,20 @@ const offline = ref(false);
 const sortKey = ref<"tps" | "ttft">("tps");
 const filterEngine = ref("");
 const filterModel = ref("");
+const filterOs = ref("");
+const filterGpu = ref("");
 
 const engines = computed(() => [...new Set(entries.value.map((e) => e.engine))]);
 const models = computed(() => [...new Set(entries.value.map((e) => e.model))]);
+const allOs = computed(() => [...new Set(entries.value.map((e) => e.os).filter(Boolean))]);
+const allGpus = computed(() => [...new Set(entries.value.map((e) => e.gpu).filter(Boolean))]);
 
 const sorted = computed(() => {
   let list = [...entries.value];
   if (filterEngine.value) list = list.filter((e) => e.engine === filterEngine.value);
   if (filterModel.value) list = list.filter((e) => e.model === filterModel.value);
+  if (filterOs.value) list = list.filter((e) => e.os?.toLowerCase().includes(filterOs.value.toLowerCase()));
+  if (filterGpu.value) list = list.filter((e) => e.gpu?.toLowerCase().includes(filterGpu.value.toLowerCase()));
   list.sort((a, b) => (sortKey.value === "tps" ? b.tps - a.tps : a.ttft - b.ttft));
   return list;
 });
@@ -55,6 +61,14 @@ function formatMs(ms: number): string {
         <option value="">All models</option>
         <option v-for="m in models" :key="m" :value="m">{{ m }}</option>
       </select>
+      <select v-model="filterOs" class="filter-select">
+        <option value="">All OS</option>
+        <option v-for="o in allOs" :key="o" :value="o">{{ o }}</option>
+      </select>
+      <select v-model="filterGpu" class="filter-select">
+        <option value="">All GPU</option>
+        <option v-for="g in allGpus" :key="g" :value="g">{{ g }}</option>
+      </select>
       <div class="sort-toggle">
         <button class="sort-btn" :class="{ active: sortKey === 'tps' }" @click="sortKey = 'tps'">TPS</button>
         <button class="sort-btn" :class="{ active: sortKey === 'ttft' }" @click="sortKey = 'ttft'">TTFT</button>
@@ -75,6 +89,7 @@ function formatMs(ms: number): string {
             <th>#</th>
             <th>Model</th>
             <th>Engine</th>
+            <th>OS</th>
             <th>GPU</th>
             <th class="num">TPS</th>
             <th class="num">TTFT</th>
@@ -86,6 +101,7 @@ function formatMs(ms: number): string {
             <td class="rank">{{ i + 1 }}</td>
             <td class="model">{{ entry.model }}</td>
             <td class="engine">{{ entry.engine }}</td>
+            <td class="os">{{ entry.os || "—" }}</td>
             <td class="gpu">{{ entry.gpu || "—" }}</td>
             <td class="num mono">{{ entry.tps.toFixed(1) }}</td>
             <td class="num mono">{{ formatMs(entry.ttft) }}</td>

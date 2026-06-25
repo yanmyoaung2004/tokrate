@@ -14,11 +14,15 @@ const emit = defineEmits<{
 const publishing = ref(false);
 const done = ref(false);
 
+const hw = ref<{ os: string; cpu: string; ram: string } | null>(null);
+
 async function publish() {
   publishing.value = true;
   try {
     const { publishResult, runToPublishPayload } = await import("@/api/leaderboard");
-    await publishResult(runToPublishPayload(props.run));
+    const payload = await runToPublishPayload(props.run);
+    hw.value = payload.os ? { os: payload.os, cpu: payload.cpu || "", ram: payload.ram || "" } : null;
+    await publishResult(payload);
     done.value = true;
     emit("publish");
   } finally {
@@ -47,6 +51,10 @@ async function publish() {
           <div class="preview-row"><span class="preview-label">TTFT</span><span class="preview-value mono">{{ (run.ttft / 1000).toFixed(2) }}s</span></div>
           <div class="preview-row"><span class="preview-label">TPOT</span><span class="preview-value mono">{{ run.tpot.toFixed(0) }}ms</span></div>
           <div class="preview-row"><span class="preview-label">Tokens</span><span class="preview-value mono">{{ run.completionTokens }} / {{ run.totalTokens }}</span></div>
+          <div v-if="hw" class="preview-divider"></div>
+          <div v-if="hw" class="preview-row"><span class="preview-label">OS</span><span class="preview-value mono">{{ hw.os }}</span></div>
+          <div v-if="hw?.cpu" class="preview-row"><span class="preview-label">CPU</span><span class="preview-value mono">{{ hw.cpu }}</span></div>
+          <div v-if="hw?.ram" class="preview-row"><span class="preview-label">RAM</span><span class="preview-value mono">{{ hw.ram }}</span></div>
         </div>
 
         <div class="dialog-actions">
@@ -120,9 +128,8 @@ async function publish() {
   font-weight: 500;
 }
 
-.mono {
-  font-family: var(--font-mono);
-}
+.mono { font-family: var(--font-mono); }
+.preview-divider { height: 1px; background: var(--border); margin: var(--space-1) 0; }
 
 .done-state {
   display: flex;
