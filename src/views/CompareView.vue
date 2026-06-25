@@ -111,6 +111,34 @@ async function runAll() {
 }
 
 function clearResults() { results.value = []; }
+
+function exportResults() {
+  if (!results.value.length) return;
+  const data = {
+    exportedAt: new Date().toISOString(),
+    configs: results.value.map((r) => ({
+      label: r.config.label,
+      model: r.config.model,
+      serverUrl: r.config.serverUrl,
+      status: r.status,
+      error: r.error,
+      tps: r.metrics?.tps,
+      ttft: r.metrics?.ttft,
+      tpot: r.metrics?.tpot,
+      completionTokens: r.metrics?.completionTokens,
+      duration: r.metrics?.duration,
+      responseLength: r.response.length,
+    })),
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `compare-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast.add("Results exported as JSON", "success");
+}
 </script>
 
 <template>
@@ -119,6 +147,7 @@ function clearResults() { results.value = []; }
       <h1 class="title">Compare</h1>
       <div class="right">
         <span v-if="running" class="progress">{{ currentProgress }}</span>
+        <button v-if="results.length" class="btn ghost btn-sm" @click="exportResults">Export</button>
         <button v-if="results.length" class="btn ghost btn-sm" @click="clearResults">Clear</button>
       </div>
     </div>
