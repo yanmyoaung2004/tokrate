@@ -44,6 +44,16 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
+async function copyModel() {
+  if (!selectedModel.value) return;
+  try {
+    await navigator.clipboard.writeText(selectedModel.value);
+    toast.add("Copied: " + selectedModel.value, "success");
+  } catch {
+    toast.add("Failed to copy", "error");
+  }
+}
+
 async function send() {
   if (!prompt.value.trim() || streaming.value) return;
   const userMsg: ChatMessage = { role: "user", content: prompt.value };
@@ -159,6 +169,7 @@ function canSave(): boolean {
           <option value="" disabled>Model…</option>
           <option v-for="m in models" :key="m" :value="m">{{ m }}</option>
         </select>
+        <button v-if="selectedModel" class="icon-btn" @click="copyModel" title="Copy model name">📋</button>
         <button class="icon-btn" @click="loadModels" :disabled="loadingModels" :title="loadingModels ? 'Loading...' : 'Reload model list'">{{ loadingModels ? "⋯" : "↻" }}</button>
         <button
           class="toggle thin"
