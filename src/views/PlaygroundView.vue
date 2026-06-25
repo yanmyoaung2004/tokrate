@@ -246,12 +246,12 @@ function canSave(): boolean {
           {{ thinkingEnabled ? "🧠" : "⚡" }}
         </button>
         <button
-          class="toggle thin"
+          class="toggle tool-toggle"
           :class="{ on: toolsEnabled }"
           @click="toolsEnabled = !toolsEnabled"
-          title="Test tool calling with predefined functions"
+          title="Test function calling with predefined tools"
         >
-          🛠
+          fx{{ toolsEnabled ? " ✓" : "" }}
         </button>
       </div>
       <div class="right-group">
@@ -391,6 +391,19 @@ function canSave(): boolean {
   line-height: 1;
 }
 .toggle.on { border-color: var(--accent); }
+
+.tool-toggle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.tool-toggle.on {
+  border-color: var(--success);
+  background: color-mix(in oklch, var(--success) 12%, transparent);
+  color: var(--success);
+}
 
 /* Chat area */
 .chat-area {
