@@ -169,7 +169,7 @@ function canSave(): boolean {
           <option value="" disabled>Model…</option>
           <option v-for="m in models" :key="m" :value="m">{{ m }}</option>
         </select>
-        <button v-if="selectedModel" class="icon-btn" @click="copyModel" title="Copy model name">📋</button>
+        <button v-if="selectedModel" class="icon-btn" @click="copyModel" title="Copy model name">⎘</button>
         <button class="icon-btn" @click="loadModels" :disabled="loadingModels" :title="loadingModels ? 'Loading...' : 'Reload model list'">{{ loadingModels ? "⋯" : "↻" }}</button>
         <button
           class="toggle thin"
