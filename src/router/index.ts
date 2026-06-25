@@ -14,6 +14,11 @@ const router = createRouter({
       component: () => import("@/views/CompareView.vue"),
     },
     {
+      path: "/benchmarks",
+      name: "benchmarks",
+      component: () => import("@/views/BenchmarksView.vue"),
+    },
+    {
       path: "/history",
       name: "history",
       component: () => import("@/views/HistoryView.vue"),

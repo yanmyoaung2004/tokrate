@@ -9,6 +9,7 @@ const config = useConfigStore();
 const navItems = [
   { path: "/", label: "Playground", icon: ">" },
   { path: "/compare", label: "Compare", icon: "=" },
+  { path: "/benchmarks", label: "Benchmarks", icon: "~" },
   { path: "/history", label: "History", icon: "*" },
   { path: "/leaderboard", label: "Leaderboard", icon: "#" },
   { path: "/settings", label: "Settings", icon: "@" },
