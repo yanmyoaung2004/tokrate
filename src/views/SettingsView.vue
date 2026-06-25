@@ -31,6 +31,7 @@ async function testConn() {
     connectionError.value = urlError.value;
     return;
   }
+  syncProvider();
   testing.value = true;
   connectionOk.value = null;
   connectionError.value = "";
@@ -58,6 +59,19 @@ async function loadModels() {
   loadingModels.value = true;
   models.value = await fetchModels(config.serverUrl, config.apiKey);
   loadingModels.value = false;
+}
+
+function syncProvider() {
+  const url = config.serverUrl;
+  if (!url) return;
+  const existing = config.providers.find((p) => p.url === url);
+  if (existing) {
+    existing.apiKey = config.apiKey;
+  } else {
+    const label = `Server ${config.providers.length + 1}`;
+    config.providers.push({ label, url, apiKey: config.apiKey });
+  }
+  config.selectProvider(url, config.apiKey);
 }
 
 watch(() => config.serverUrl, () => { connectionOk.value = null; });
