@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref } from "vue";
 import { useConfigStore } from "@/stores/config";
 import { useToastStore } from "@/stores/toast";
-import { streamChat, fetchModels } from "@/api/client";
+import { streamChat } from "@/api/client";
 import type { RunMetrics } from "@/types";
-
-type Mode = "manual" | "quant";
 
 interface CompareConfig {
   id: string; label: string; serverUrl: string; apiKey: string;
@@ -18,41 +16,20 @@ interface CompareResult {
   status: "pending" | "running" | "done" | "error"; error?: string;
 }
 
-const COMMON_QUANTS = [
-  { tag: "q2_k", label: "Q2_K" }, { tag: "q3_k_m", label: "Q3_K_M" },
-  { tag: "q4_0", label: "Q4_0" }, { tag: "q4_k_m", label: "Q4_K_M" },
-  { tag: "q5_k_m", label: "Q5_K_M" }, { tag: "q6_k", label: "Q6_K" },
-  { tag: "q8_0", label: "Q8_0" },
-];
+const QUANTS = ["q2_k", "q3_k_m", "q4_0", "q4_k_m", "q5_k_m", "q6_k", "q8_0"];
 
 const defaultConfig = useConfigStore();
 const toast = useToastStore();
-const mode = ref<Mode>("manual");
 const prompt = ref("");
 const configs = ref<CompareConfig[]>([
   { id: "1", label: "Config 1", serverUrl: defaultConfig.serverUrl, apiKey: defaultConfig.apiKey, model: defaultConfig.defaultModel || "llama3.2", temperature: 0.7, maxTokens: 2048 },
   { id: "2", label: "Config 2", serverUrl: defaultConfig.serverUrl, apiKey: defaultConfig.apiKey, model: defaultConfig.defaultModel || "llama3.2", temperature: 0.7, maxTokens: 2048 },
 ]);
-const quantBase = ref("llama3.2");
 const results = ref<CompareResult[]>([]);
 const running = ref(false);
 const currentProgress = ref("");
-const availableModels = ref<string[]>([]);
+const fillBase = ref("");
 let nextId = 3;
-
-const quantConfigs = computed(() => {
-  const parts = quantBase.value.split(":");
-  const baseName = parts[0];
-  return COMMON_QUANTS.map((q, i) => ({
-    id: `q-${i}`, label: q.label, serverUrl: defaultConfig.serverUrl,
-    apiKey: defaultConfig.apiKey, model: `${baseName}:${q.tag}`,
-    temperature: 0.7, maxTokens: 2048,
-  }));
-});
-
-async function loadModelsFor(cfg: CompareConfig) {
-  availableModels.value = await fetchModels(cfg.serverUrl, cfg.apiKey);
-}
 
 function addConfig() {
   configs.value.push({
@@ -61,23 +38,35 @@ function addConfig() {
     model: defaultConfig.defaultModel || "llama3.2", temperature: 0.7, maxTokens: 2048,
   });
 }
-function removeConfig(id: string) { if (configs.value.length > 1) configs.value = configs.value.filter((c) => c.id !== id); }
-function switchMode(m: Mode) { mode.value = m; results.value = []; }
+
+function removeConfig(id: string) {
+  if (configs.value.length > 1) configs.value = configs.value.filter((c) => c.id !== id);
+}
+
+function fillQuants() {
+  if (!fillBase.value.trim()) return;
+  const base = fillBase.value.split(":")[0];
+  configs.value = QUANTS.map((q, i) => ({
+    id: String(nextId++), label: q, serverUrl: defaultConfig.serverUrl,
+    apiKey: defaultConfig.apiKey, model: `${base}:${q}`,
+    temperature: 0.7, maxTokens: 2048,
+  }));
+  toast.add(`Filled ${QUANTS.length} quantization configs`, "info");
+}
 
 async function runAll() {
   if (!prompt.value.trim() || running.value) return;
-  const targets = mode.value === "quant" ? quantConfigs.value : configs.value;
   running.value = true; results.value = [];
-  currentProgress.value = `0 / ${targets.length}`;
+  currentProgress.value = `0 / ${configs.value.length}`;
 
-  for (let i = 0; i < targets.length; i++) {
-    const cfg = targets[i];
+  for (let i = 0; i < configs.value.length; i++) {
+    const cfg = configs.value[i];
     const result: CompareResult = {
       config: { ...cfg }, response: "", reasoning: "",
       metrics: null, status: "running",
     };
     results.value.push(result);
-    currentProgress.value = `${i + 1} / ${targets.length}`;
+    currentProgress.value = `${i + 1} / ${configs.value.length}`;
 
     try {
       let content = ""; let reasoning = ""; let finalMetrics: RunMetrics | null = null;
@@ -98,7 +87,7 @@ async function runAll() {
     }
   }
   running.value = false; currentProgress.value = "";
-  toast.add(`Completed ${targets.length} configs`, "success");
+  toast.add(`Completed ${configs.value.length} configs`, "success");
 }
 
 function clearResults() { results.value = []; }
@@ -107,64 +96,46 @@ function clearResults() { results.value = []; }
 <template>
   <div class="compare-page">
     <div class="top-bar">
-      <div class="left">
-        <h1 class="title">Compare</h1>
-        <div class="tabs">
-          <button class="tab" :class="{ active: mode === 'manual' }" @click="switchMode('manual')">Manual</button>
-          <button class="tab" :class="{ active: mode === 'quant' }" @click="switchMode('quant')">Quant Tuner</button>
-        </div>
-      </div>
+      <h1 class="title">Compare</h1>
       <div class="right">
         <span v-if="running" class="progress">{{ currentProgress }}</span>
         <button v-if="results.length" class="btn ghost btn-sm" @click="clearResults">Clear</button>
       </div>
     </div>
 
-    <!-- Manual: config cards -->
-    <template v-if="mode === 'manual'">
-      <div class="config-grid">
-        <div v-for="cfg in configs" :key="cfg.id" class="card compact">
-          <div class="card-h">
-            <input v-model="cfg.label" class="label-input" />
-            <div class="card-actions">
-              <button class="icon-btn" @click="loadModelsFor(cfg)" title="Load models">↻</button>
-              <button v-if="configs.length > 1" class="icon-btn" @click="removeConfig(cfg.id)">✕</button>
-            </div>
-          </div>
-          <div class="card-fields">
-            <div class="fld"><label>Server</label><input v-model="cfg.serverUrl" class="sm" /></div>
-            <div class="fld"><label>Model</label>
-              <input v-model="cfg.model" class="sm" list="cmp-models" />
-              <datalist id="cmp-models"><option v-for="m in availableModels" :key="m" :value="m" /></datalist>
-            </div>
-            <div class="fld"><label>Temp</label><input v-model.number="cfg.temperature" type="number" min="0" max="2" step="0.1" class="sm" /></div>
-            <div class="fld"><label>Max tokens</label><input v-model.number="cfg.maxTokens" type="number" min="64" max="8192" step="64" class="sm" /></div>
+    <!-- Config cards -->
+    <div class="config-grid">
+      <div v-for="cfg in configs" :key="cfg.id" class="card">
+        <div class="card-h">
+          <input v-model="cfg.label" class="label-input" />
+          <div class="card-actions">
+            <button v-if="configs.length > 1" class="icon-btn" @click="removeConfig(cfg.id)" title="Remove">✕</button>
           </div>
         </div>
-        <button class="card add-card" @click="addConfig">+</button>
-      </div>
-    </template>
-
-    <!-- Quant Tuner -->
-    <template v-if="mode === 'quant'">
-      <div class="card">
-        <div class="card-h"><span class="card-title">Quantization Tuner</span></div>
-        <p class="desc">Tests the same prompt across quantization levels of <code>{{ quantBase.split(":")[0] }}</code>.</p>
-        <div class="quant-field">
-          <label>Model base</label>
-          <input v-model="quantBase" class="field-input" placeholder="llama3.2, deepseek-r1..." />
-        </div>
-        <div class="tags">
-          <span v-for="qc in quantConfigs" :key="qc.id" class="tag">{{ qc.model }}</span>
+        <div class="card-body">
+          <div class="fld"><label>Server</label><input v-model="cfg.serverUrl" class="sm" /></div>
+          <div class="fld"><label>Model</label><input v-model="cfg.model" class="sm" /></div>
+          <div class="fld"><label>Temp</label><input v-model.number="cfg.temperature" type="number" min="0" max="2" step="0.1" class="sm" /></div>
+          <div class="fld"><label>Max tokens</label><input v-model.number="cfg.maxTokens" type="number" min="64" max="8192" step="64" class="sm" /></div>
         </div>
       </div>
-    </template>
+      <div class="card add-card" @click="addConfig">+</div>
+    </div>
 
-    <!-- Prompt -->
+    <!-- Fill quants helper -->
+    <details class="fill-quants">
+      <summary>Fill quantization variants</summary>
+      <div class="fill-row">
+        <input v-model="fillBase" class="fill-input" placeholder="Model name (e.g. llama3.2)" />
+        <button class="btn" @click="fillQuants" :disabled="!fillBase.trim()">Fill</button>
+      </div>
+    </details>
+
+    <!-- Prompt + run -->
     <div class="prompt-row">
       <textarea v-model="prompt" placeholder="Enter a prompt to run against all configurations…" rows="2" class="prompt-input" :disabled="running" />
       <button class="btn primary" @click="runAll" :disabled="!prompt.trim() || running">
-        {{ running ? "Running…" : `Run All (${mode === 'quant' ? quantConfigs.length : configs.length})` }}
+        {{ running ? "Running…" : `Run (${configs.value.length})` }}
       </button>
     </div>
 
@@ -202,7 +173,7 @@ function clearResults() { results.value = []; }
     </div>
 
     <div v-else class="empty">
-      <p>{{ mode === 'manual' ? 'Add configs, enter a prompt, and run.' : 'Set a model name, enter a prompt, and run.' }}</p>
+      <p>Add configs, enter a prompt, and run.</p>
     </div>
   </div>
 </template>
@@ -210,54 +181,42 @@ function clearResults() { results.value = []; }
 <style scoped>
 .compare-page { height: 100%; display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); max-width: 1100px; margin: 0 auto; width: 100%; overflow: hidden; }
 
-/* Top bar */
-.top-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
-.left, .right { display: flex; align-items: center; gap: var(--space-2); }
+.top-bar { display: flex; align-items: center; justify-content: space-between; }
 .title { font-size: 16px; font-weight: 600; }
-.tabs { display: flex; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
-.tab { padding: var(--space-1) var(--space-3); font-size: 11px; font-weight: 500; background: transparent; border: none; color: var(--muted); cursor: pointer; }
-.tab.active { background: var(--primary); color: white; }
+.right { display: flex; align-items: center; gap: var(--space-2); }
 .progress { font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
 
-/* Config cards */
-.config-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-2); }
-.card { padding: var(--space-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: var(--space-2); }
-.card.compact { gap: var(--space-2); }
+.config-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--space-2); }
+.card { padding: var(--space-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
 .add-card { display: flex; align-items: center; justify-content: center; font-size: 24px; color: var(--muted); cursor: pointer; min-height: 80px; }
 .add-card:hover { border-color: var(--primary); color: var(--primary); }
-.card-h { display: flex; align-items: center; justify-content: space-between; }
-.card-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.card-h { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2); }
 .card-actions { display: flex; gap: 2px; }
-.label-input { font-weight: 600; font-size: 13px; background: transparent; border: none; color: var(--ink); padding: 2px 4px; border-radius: var(--radius-sm); }
+.label-input { font-weight: 600; font-size: 13px; background: transparent; border: none; color: var(--ink); padding: 2px 4px; border-radius: var(--radius-sm); width: 100%; }
 .label-input:focus { outline: none; background: var(--bg); }
-.card-fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-1); }
+.card-body { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-1); }
 .fld { display: flex; flex-direction: column; gap: 1px; }
 .fld label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
 .sm { padding: var(--space-1) var(--space-2); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--ink); font-family: var(--font-mono); font-size: 11px; width: 100%; }
 .sm:focus { outline: none; border-color: var(--primary); }
 
-.quant-field { display: flex; flex-direction: column; gap: var(--space-1); }
-.quant-field label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
-.field-input { padding: var(--space-1) var(--space-2); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--ink); font-family: var(--font-mono); font-size: 12px; }
-.field-input:focus { outline: none; border-color: var(--primary); }
-.desc { font-size: 12px; color: var(--muted); }
-.desc code { font-family: var(--font-mono); color: var(--ink); }
-.tags { display: flex; flex-wrap: wrap; gap: var(--space-1); }
-.tag { padding: 2px 6px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 10px; color: var(--ink); }
+.fill-quants { font-size: 12px; color: var(--muted); }
+.fill-quants summary { cursor: pointer; color: var(--primary); font-size: 11px; }
+.fill-row { display: flex; gap: var(--space-2); margin-top: var(--space-2); }
+.fill-input { flex: 1; padding: var(--space-1) var(--space-2); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--ink); font-family: var(--font-mono); font-size: 12px; }
+.fill-input:focus { outline: none; border-color: var(--primary); }
 
-/* Prompt */
 .prompt-row { display: flex; gap: var(--space-2); align-items: flex-start; }
 .prompt-input { flex: 1; padding: var(--space-2) var(--space-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--ink); font-size: 13px; resize: vertical; min-height: 50px; }
 .prompt-input:focus { outline: none; border-color: var(--primary); }
 .prompt-input:disabled { opacity: 0.5; }
 
-/* Results */
 .results { flex: 1; display: flex; flex-direction: column; gap: var(--space-3); min-height: 0; }
 .bars { padding: var(--space-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: var(--space-1); }
 .bar-row { display: grid; grid-template-columns: 80px 1fr; gap: var(--space-2); align-items: center; }
 .bar-label { font-size: 10px; font-weight: 500; text-align: right; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bar-track { height: 22px; background: var(--bg); border-radius: var(--radius-sm); overflow: hidden; }
-.bar-fill { height: 100%; background: var(--primary); border-radius: var(--radius-sm); display: flex; align-items: center; padding: 0 var(--space-2); font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: white; min-width: fit-content; transition: width 300ms ease; }
+.bar-fill { height: 100%; background: var(--primary); border-radius: var(--radius-sm); display: flex; align-items: center; padding: 0 var(--space-2); font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: white; min-width: fit-content; }
 .bar-err { padding: 0 var(--space-2); font-size: 10px; color: var(--danger); line-height: 22px; }
 .bar-pend { padding: 0 var(--space-2); font-size: 10px; color: var(--muted); line-height: 22px; }
 
@@ -276,9 +235,8 @@ function clearResults() { results.value = []; }
 .r-err-text { font-size: 11px; color: var(--danger); margin-bottom: var(--space-1); }
 .r-text { flex: 1; overflow-y: auto; font-family: var(--font-mono); font-size: 11px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; background: var(--bg); padding: var(--space-2); border-radius: var(--radius-sm); }
 
-.empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; text-align: center; }
+.empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
 
-/* Shared */
 .btn { padding: var(--space-1) var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--border); font-size: 11px; font-weight: 500; cursor: pointer; transition: background var(--transition-fast); }
 .btn:disabled { opacity: 0.4; cursor: default; }
 .btn-sm { padding: var(--space-1) var(--space-2); font-size: 10px; }
