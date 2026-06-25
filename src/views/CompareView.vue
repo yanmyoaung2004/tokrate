@@ -2,7 +2,7 @@
 import { ref } from "vue";
 import { useConfigStore } from "@/stores/config";
 import { useToastStore } from "@/stores/toast";
-import { streamChat } from "@/api/client";
+import { streamChat, fetchModels } from "@/api/client";
 import { renderMarkdown } from "@/utils/markdown";
 import type { RunMetrics } from "@/types";
 
@@ -30,7 +30,23 @@ const results = ref<CompareResult[]>([]);
 const running = ref(false);
 const currentProgress = ref("");
 const fillBase = ref("");
+const modelsByUrl = ref<Record<string, string[]>>({});
 let nextId = 3;
+
+function modelList(cfg: CompareConfig): string[] {
+  return modelsByUrl.value[cfg.serverUrl] || [];
+}
+
+async function onProviderChange(cfg: CompareConfig) {
+  const url = cfg.serverUrl;
+  const p = defaultConfig.providers.find((pr) => pr.url === url);
+  if (p) cfg.apiKey = p.apiKey;
+  if (!modelsByUrl.value[url]) {
+    modelsByUrl.value[url] = await fetchModels(url, cfg.apiKey);
+  }
+  const models = modelsByUrl.value[url] || [];
+  if (models.length && !cfg.model) cfg.model = models[0];
+}
 
 function addConfig() {
   configs.value.push({
@@ -39,6 +55,9 @@ function addConfig() {
     model: defaultConfig.defaultModel || "llama3.2", temperature: 0.7, maxTokens: 2048,
   });
 }
+
+// Load models for existing configs on mount
+configs.value.forEach((c) => onProviderChange(c));
 
 function removeConfig(id: string) {
   if (configs.value.length > 1) configs.value = configs.value.filter((c) => c.id !== id);
@@ -114,8 +133,18 @@ function clearResults() { results.value = []; }
           </div>
         </div>
         <div class="card-body">
-          <div class="fld"><label>Server</label><input v-model="cfg.serverUrl" class="sm" /></div>
-          <div class="fld"><label>Model</label><input v-model="cfg.model" class="sm" /></div>
+          <div class="fld"><label>Provider</label>
+            <select v-model="cfg.serverUrl" class="sm" @change="onProviderChange(cfg)">
+              <option value="" disabled>Select…</option>
+              <option v-for="p in defaultConfig.providers" :key="p.url" :value="p.url">{{ p.label }}</option>
+            </select>
+          </div>
+          <div class="fld"><label>Model</label>
+            <select v-model="cfg.model" class="sm">
+              <option value="" disabled>Select…</option>
+              <option v-for="m in modelList(cfg)" :key="m" :value="m">{{ m }}</option>
+            </select>
+          </div>
           <div class="fld"><label>Temp</label><input v-model.number="cfg.temperature" type="number" min="0" max="2" step="0.1" class="sm" /></div>
           <div class="fld"><label>Max tokens</label><input v-model.number="cfg.maxTokens" type="number" min="64" max="8192" step="64" class="sm" /></div>
         </div>
