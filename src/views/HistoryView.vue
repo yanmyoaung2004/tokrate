@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from "vue";
+import { useRouter } from "vue-router";
 import { useHistoryStore } from "@/stores/history";
 import { useToastStore } from "@/stores/toast";
 import type { BenchmarkRun } from "@/types";
 import PublishDialog from "@/components/PublishDialog.vue";
 
+const router = useRouter();
 const history = useHistoryStore();
 const toast = useToastStore();
 const selectedRun = ref<BenchmarkRun | null>(null);
@@ -34,6 +36,13 @@ async function handleDelete(id: string) {
   await history.removeRun(id);
   if (selectedRun.value?.id === id) selectedRun.value = null;
   toast.add("Run deleted", "info");
+}
+
+function reRun(run: BenchmarkRun) {
+  router.push({
+    path: "/",
+    query: { prompt: run.prompt, model: run.model },
+  });
 }
 
 async function handleClearAll() {
@@ -103,6 +112,7 @@ function formatMs(ms: number): string {
         <div class="detail-header">
           <h2>{{ selectedRun.model }}</h2>
           <div class="detail-actions">
+            <button class="btn btn-secondary btn-sm" @click="reRun(selectedRun)">Re-run</button>
             <button class="btn btn-secondary btn-sm" @click="publishRun = selectedRun">Publish</button>
             <button class="btn btn-ghost btn-sm" @click="handleDelete(selectedRun.id)">Delete</button>
           </div>

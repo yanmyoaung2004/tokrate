@@ -5,6 +5,7 @@ import { useSuitesStore } from "@/stores/suites";
 import { useToastStore } from "@/stores/toast";
 import { streamChat, fetchModels } from "@/api/client";
 import type { RunMetrics } from "@/types";
+import { TEMPLATES } from "@/data/templates";
 
 const config = useConfigStore();
 const suites = useSuitesStore();
@@ -22,6 +23,8 @@ const runApiKey = ref(config.apiKey);
 const runModel = ref(config.defaultModel || "");
 const models = ref<string[]>([]);
 const loadingModels = ref(false);
+const showTemplates = ref(false);
+const activeTemplateCategory = ref(0);
 
 const selected = computed(() => suites.suites.find((s) => s.id === selectedId.value));
 
@@ -69,6 +72,15 @@ async function addPrompt() {
   });
   newPromptName.value = "";
   newPromptContent.value = "";
+}
+
+async function addTemplatePrompt(t: { name: string; content: string }) {
+  if (!selected.value) return;
+  await suites.addPrompt(selected.value.id, {
+    id: Date.now().toString(36),
+    name: t.name,
+    content: t.content,
+  });
 }
 
 async function runSuite() {
@@ -193,9 +205,25 @@ function avgTtft(): string {
 
           <!-- Add prompt -->
           <div class="add-block">
-            <input v-model="newPromptName" class="input" placeholder="Prompt name…" />
+            <div class="add-top">
+              <input v-model="newPromptName" class="input flex" placeholder="Prompt name…" />
+              <button class="btn" @click="showTemplates = !showTemplates">Templates</button>
+            </div>
             <textarea v-model="newPromptContent" class="input area" rows="2" placeholder="Prompt content…" />
-            <button class="btn" @click="addPrompt" :disabled="!newPromptName.trim() || !newPromptContent.trim()">Add</button>
+            <button class="btn primary sm" @click="addPrompt" :disabled="!newPromptName.trim() || !newPromptContent.trim()">Add</button>
+
+            <!-- Template picker -->
+            <div v-if="showTemplates" class="template-picker">
+              <div class="tp-nav">
+                <button v-for="(cat, ci) in TEMPLATES" :key="ci" class="tp-tab" :class="{ on: activeTemplateCategory === ci }" @click="activeTemplateCategory = ci">{{ cat.name }}</button>
+              </div>
+              <div class="tp-list">
+                <div v-for="t in TEMPLATES[activeTemplateCategory].prompts" :key="t.name" class="tp-item" @click="addTemplatePrompt(t)">
+                  <span class="tp-name">{{ t.name }}</span>
+                  <span class="tp-preview">{{ t.content.slice(0, 60) }}{{ t.content.length > 60 ? "…" : "" }}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -295,9 +323,23 @@ function avgTtft(): string {
 .badge.muted { color: var(--muted); }
 
 .add-block { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: 1px dashed var(--border); border-radius: var(--radius-md); background: var(--bg); }
+.add-top { display: flex; gap: var(--space-2); }
 .add-block .input { padding: var(--space-1) var(--space-2); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--ink); font-size: 12px; }
+.add-block .input.flex { flex: 1; }
 .add-block .input:focus { outline: none; border-color: var(--primary); }
 .add-block .area { font-family: var(--font-mono); font-size: 11px; resize: vertical; }
+.add-block .sm { align-self: flex-start; }
+
+/* Template picker */
+.template-picker { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); overflow: hidden; }
+.tp-nav { display: flex; overflow-x: auto; gap: 0; border-bottom: 1px solid var(--border); }
+.tp-tab { padding: var(--space-1) var(--space-2); font-size: 11px; font-weight: 500; background: transparent; border: none; color: var(--muted); cursor: pointer; white-space: nowrap; border-bottom: 2px solid transparent; }
+.tp-tab.on { color: var(--ink); border-bottom-color: var(--primary); }
+.tp-list { display: flex; flex-direction: column; max-height: 240px; overflow-y: auto; }
+.tp-item { padding: var(--space-2) var(--space-3); cursor: pointer; display: flex; flex-direction: column; gap: 2px; transition: background var(--transition-fast); }
+.tp-item:hover { background: var(--bg); }
+.tp-name { font-size: 13px; font-weight: 500; }
+.tp-preview { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Aggregate */
 .agg { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-2); }

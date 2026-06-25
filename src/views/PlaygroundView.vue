@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
+import { useRoute } from "vue-router";
 import { useConfigStore } from "@/stores/config";
 import { useHistoryStore } from "@/stores/history";
 import { useToastStore } from "@/stores/toast";
@@ -12,6 +13,7 @@ import SpeedChart from "@/components/SpeedChart.vue";
 const config = useConfigStore();
 const history = useHistoryStore();
 const toast = useToastStore();
+const route = useRoute();
 const prompt = ref("");
 const messages = ref<ChatMessage[]>([]);
 const streaming = ref(false);
@@ -31,7 +33,14 @@ const answeringData = ref<{ time: number; tps: number }[]>([]);
 const currentPhase = ref<"thinking" | "answering">("thinking");
 const hasReasoning = computed(() => messages.value.some((m) => m.reasoning));
 
-onMounted(() => { loadModels(); });
+onMounted(async () => {
+  await loadModels();
+  // Handle re-run from History
+  if (route.query.prompt) {
+    prompt.value = route.query.prompt as string;
+    if (route.query.model) selectedModel.value = route.query.model as string;
+  }
+});
 
 async function loadModels() {
   loadingModels.value = true;
