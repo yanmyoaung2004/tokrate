@@ -347,7 +347,7 @@ function canSave(): boolean {
 .thinking-live {
   margin-bottom: var(--space-2); padding: var(--space-2);
   background: color-mix(in oklch, var(--accent) 8%, transparent);
-  border-radius: var(--radius-md); border-left: 2px solid var(--accent);
+  border-radius: var(--radius-md); border: 1px solid var(--border);
 }
 .thinking-header { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); margin-bottom: var(--space-1); }
 .thinking-text { font-size: 12px; line-height: 1.5; color: var(--muted); white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; }

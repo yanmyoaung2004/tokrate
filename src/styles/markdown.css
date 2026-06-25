@@ -52,11 +52,10 @@
 
 .md blockquote {
   margin: 0.5em 0;
-  padding: 0.25em 1em;
-  border-left: 3px solid var(--primary);
-  color: var(--muted);
-  background: var(--surface);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 0.5em 1em;
+  color: var(--ink);
+  background: color-mix(in oklch, var(--primary) 8%, var(--surface));
+  border-radius: var(--radius-md);
 }
 
 .md table {
