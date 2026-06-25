@@ -1,3 +1,4 @@
+use crate::proxy::{ProxyState, ProxyStatus};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use sysinfo::System;
@@ -81,4 +82,22 @@ pub fn delete_run(state: State<AppState>, id: String) -> Result<(), String> {
     let mut runs = state.runs.lock().map_err(|e| e.to_string())?;
     runs.retain(|r| r.id != id);
     Ok(())
+}
+
+// ── Proxy commands ──
+
+#[tauri::command]
+pub fn proxy_start(proxy: State<ProxyState>, port: u16, backend_url: String) -> Result<(), String> {
+    proxy.start(port, backend_url)
+}
+
+#[tauri::command]
+pub fn proxy_stop(proxy: State<ProxyState>) -> Result<(), String> {
+    proxy.stop();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn proxy_status(proxy: State<ProxyState>) -> ProxyStatus {
+    proxy.status()
 }

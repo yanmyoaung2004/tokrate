@@ -116,12 +116,10 @@ async function send() {
     messageContent = currentPrompt;
   }
 
-  const userMsg: ChatMessage = { role: "user", content: messageContent };
-  messages.value.push(userMsg);
+  messages.value.push({ role: "user", content: messageContent });
   prompt.value = "";
   attachments.value = [];
-  const assistantMsg: ChatMessage = { role: "assistant", content: "", reasoning: "" };
-  messages.value.push(assistantMsg);
+  messages.value.push({ role: "assistant", content: "", reasoning: "" });
   toolCallValid.value = null;
   const controller = new AbortController();
   abortController.value = controller;
@@ -134,6 +132,9 @@ async function send() {
   answeringTps.value = undefined;
   currentPhase.value = "thinking";
 
+  // Get reactive reference through the array proxy so mutations trigger reactivity
+  const idx = messages.value.length - 1;
+
   try {
     for await (const chunk of streamChat(
       config.serverUrl, config.apiKey,
@@ -141,12 +142,17 @@ async function send() {
       [{ role: "user", content: messageContent }],
       { signal: controller.signal, thinking: thinkingEnabled.value, tools: toolsEnabled.value ? TEST_TOOLS : undefined }
     )) {
-      assistantMsg.content += chunk.content;
-      if (chunk.reasoningContent) {
-        assistantMsg.reasoning = (assistantMsg.reasoning || "") + chunk.reasoningContent;
+      if (thinkingEnabled.value) {
+        messages.value[idx].content += chunk.content;
+        if (chunk.reasoningContent) {
+          const r = messages.value[idx].reasoning || "";
+          messages.value[idx].reasoning = r + chunk.reasoningContent;
+        }
+      } else {
+        messages.value[idx].content += chunk.content + (chunk.reasoningContent || "");
       }
       if (chunk.toolCalls?.length) {
-        assistantMsg.toolCalls = chunk.toolCalls;
+        messages.value[idx].toolCalls = chunk.toolCalls;
         toolCallValid.value = chunk.toolCalls.every((tc) => {
           try { JSON.parse(tc.function.arguments); return true; } catch { return false; }
         });
@@ -157,24 +163,24 @@ async function send() {
       const elapsed = (chunk.metrics.duration ?? 0) / 1000;
       const tps = chunk.metrics.tps ?? 0;
       if (elapsed > 0 && tps > 0) {
-        if (chunk.phase === "thinking") {
+        if (chunk.phase === "thinking" && thinkingEnabled.value) {
           thinkingData.value.push({ time: +elapsed.toFixed(2), tps: +tps.toFixed(1) });
           thinkingTps.value = tps;
           currentPhase.value = "thinking";
         } else {
           answeringData.value.push({ time: +elapsed.toFixed(2), tps: +tps.toFixed(1) });
-          answeringTps.value = tps;
+          if (thinkingEnabled.value) answeringTps.value = tps;
           currentPhase.value = "answering";
         }
       }
     }
   } catch (err: unknown) {
     if (err instanceof Error && err.name === "AbortError") {
-      assistantMsg.content += "\n\n[Stopped]";
+      messages.value[idx].content += "\n\n[Stopped]";
       toast.add("Generation stopped", "info");
     } else {
       const message = err instanceof Error ? err.message : "Unknown error";
-      assistantMsg.content = `\n\nError: ${message}`;
+      messages.value[idx].content = `\n\nError: ${message}`;
       toast.add(`Error: ${message}`, "error");
     }
   } finally {
@@ -238,13 +244,20 @@ function canSave(): boolean {
         </select>
         <button v-if="selectedModel" class="icon-btn" @click="copyModel" title="Copy model name">⎘</button>
         <button class="icon-btn" @click="loadModels" :disabled="loadingModels" :title="loadingModels ? 'Loading...' : 'Reload model list'">{{ loadingModels ? "⋯" : "↻" }}</button>
-        <button
-          class="toggle thin"
-          :class="{ on: thinkingEnabled }"
-          @click="thinkingEnabled = !thinkingEnabled"
-        >
-          {{ thinkingEnabled ? "🧠" : "⚡" }}
-        </button>
+        <div class="think-toggle-wrap" :title="thinkingEnabled ? 'Thinking mode on — shows model reasoning' : 'Thinking mode off'">
+          <button
+            class="think-toggle"
+            :class="{ active: thinkingEnabled }"
+            @click="thinkingEnabled = !thinkingEnabled"
+            role="switch"
+            :aria-checked="thinkingEnabled"
+          >
+            <span class="think-track">
+              <span class="think-thumb" :class="{ on: thinkingEnabled }"></span>
+            </span>
+            <span class="think-label">{{ thinkingEnabled ? "Thinking" : "Fast" }}</span>
+          </button>
+        </div>
         <button
           class="toggle tool-toggle"
           :class="{ on: toolsEnabled }"
@@ -256,8 +269,8 @@ function canSave(): boolean {
       </div>
       <div class="right-group">
         <button v-if="canSave() && !streaming" class="btn btn-sm" @click="saveRun">Save</button>
-        <button v-if="hasReasoning" class="btn btn-sm ghost" @click="showReasoning = !showReasoning">
-          {{ showReasoning ? "Hide" : "Show" }} thinking
+        <button v-if="hasReasoning && thinkingEnabled" class="btn btn-sm ghost" @click="showReasoning = !showReasoning">
+          {{ showReasoning ? "Hide" : "Show" }} reasoning
         </button>
         <button v-if="messages.length && !streaming" class="btn btn-sm ghost" @click="clear">Clear</button>
       </div>
@@ -270,6 +283,7 @@ function canSave(): boolean {
       :thinking-data="thinkingData"
       :answering-data="answeringData"
       :phase="currentPhase"
+      :thinking-mode="thinkingEnabled"
     />
 
     <MetricsBar
@@ -278,6 +292,7 @@ function canSave(): boolean {
       :streaming="streaming"
       :thinking-tps="thinkingTps"
       :answering-tps="answeringTps"
+      :thinking-mode="thinkingEnabled"
     />
 
     <!-- Chat -->
@@ -298,13 +313,19 @@ function canSave(): boolean {
         <div class="msg-body">
           <div class="msg-label">{{ msg.role === "user" ? "You" : "Assistant" }}</div>
 
-          <div v-if="msg.reasoning && streaming" class="thinking-live">
-            <div class="thinking-header">Thinking…</div>
+          <div v-if="msg.reasoning && streaming && thinkingEnabled" class="thinking-live">
+            <div class="thinking-header">
+              <span class="thinking-dots"><span></span><span></span><span></span></span>
+              Reasoning
+            </div>
             <div class="thinking-text md" v-html="renderMarkdown(msg.reasoning)"></div>
           </div>
-          <details v-if="msg.reasoning && !streaming" class="thinking-done" open>
-            <summary class="thinking-summary">Show thinking ({{ msg.reasoning.length }} chars)</summary>
-            <div class="thinking-text md" v-html="renderMarkdown(msg.reasoning)"></div>
+          <details v-if="msg.reasoning && !streaming && thinkingEnabled" class="thinking-done" :open="showReasoning">
+            <summary class="thinking-summary" @click.prevent="showReasoning = !showReasoning">
+              <span class="summary-icon">{{ showReasoning ? "▾" : "▸" }}</span>
+              Reasoning ({{ msg.reasoning.length }} chars)
+            </summary>
+            <div v-show="showReasoning" class="thinking-text md" v-html="renderMarkdown(msg.reasoning)"></div>
           </details>
 
           <!-- Tool calls -->
@@ -449,15 +470,47 @@ function canSave(): boolean {
 /* Live thinking */
 .thinking-live {
   margin-bottom: var(--space-2); padding: var(--space-2);
-  background: color-mix(in oklch, var(--accent) 8%, transparent);
-  border-radius: var(--radius-md); border: 1px solid var(--border);
+  background: color-mix(in oklch, var(--accent) 6%, transparent);
+  border-radius: var(--radius-md); border: 1px solid color-mix(in oklch, var(--accent) 20%, var(--border));
 }
-.thinking-header { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); margin-bottom: var(--space-1); }
 .thinking-text { font-size: 12px; line-height: 1.5; color: var(--muted); white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; }
 
+/* Thinking dots animation */
+.thinking-dots {
+  display: inline-flex; align-items: center; gap: 3px;
+  margin-right: 4px;
+}
+.thinking-dots span {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--accent);
+  animation: think-pulse 1.4s ease-in-out infinite;
+}
+.thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes think-pulse {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+/* Thinking header */
+.thinking-header {
+  display: flex; align-items: center; gap: var(--space-1);
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--accent);
+  margin-bottom: var(--space-1);
+}
+
+/* Reasoning details */
 .thinking-done { margin-bottom: var(--space-2); }
-.thinking-summary { font-size: 11px; font-weight: 500; color: var(--accent); cursor: pointer; }
+.thinking-summary {
+  font-size: 11px; font-weight: 500; color: var(--accent);
+  cursor: pointer; list-style: none; display: flex; align-items: center; gap: 4px;
+  user-select: none; padding: var(--space-1) 0;
+}
 .thinking-summary:hover { opacity: 0.8; }
+.thinking-summary::-webkit-details-marker { display: none; }
+.summary-icon { font-size: 10px; color: var(--muted); }
 
 /* Tool calls */
 .toolcalls { margin-bottom: var(--space-2); display: flex; flex-direction: column; gap: var(--space-1); }
@@ -518,4 +571,43 @@ function canSave(): boolean {
 .btn.solid { background: var(--primary); color: white; border-color: transparent; }
 .btn.ghost { border-color: transparent; color: var(--muted); }
 .btn.ghost:hover { background: var(--surface); color: var(--ink); }
+
+/* Thinking toggle switch */
+.think-toggle-wrap {
+  display: flex; align-items: center;
+}
+.think-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: none; cursor: pointer;
+  padding: 2px 6px; border-radius: var(--radius-md);
+  transition: background var(--transition-fast);
+}
+.think-toggle:hover { background: var(--border); }
+.think-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.think-track {
+  width: 28px; height: 14px; border-radius: 7px;
+  background: var(--border); position: relative;
+  transition: background var(--transition-fast);
+  flex-shrink: 0;
+}
+.think-toggle.active .think-track { background: var(--accent); }
+
+.think-thumb {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--muted); position: absolute;
+  top: 2px; left: 2px;
+  transition: transform var(--transition-fast), background var(--transition-fast);
+}
+.think-thumb.on {
+  background: var(--bg);
+  transform: translateX(14px);
+}
+
+.think-label {
+  font-size: 10px; font-weight: 500;
+  color: var(--muted); white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+.think-toggle.active .think-label { color: var(--accent); }
 </style>

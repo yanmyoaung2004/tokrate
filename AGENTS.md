@@ -3,54 +3,60 @@
 ## Project state
 
 All 5 phases complete. Tauri v2 + Vue 3 + Vite project with:
+- Playground (streaming chat + ECharts TPS chart)
+- Compare (multi-config runner + quantization tuner)
+- Benchmarks (prompt suites)
+- History (saved runs with search/detail/publish)
+- Leaderboard (sortable community results)
+- Settings (server URL, API key, models, theme)
 
-- **Playground** — streaming chat with live ECharts TPS chart, metrics bar, save to history
-- **Compare** — multi-config runner and quantization tuner with side-by-side results
-- **History** — saved runs with search, detail view, publish to leaderboard
-- **Leaderboard** — sortable/filterable community results browser
-- **Settings** — server URL, API key, model selection, theme toggle, connection test
-- **Design system** — dark-first theme, CSS custom properties, system fonts, toast notifications
+Not yet: tests, lint configs, CI, formatter — scaffold from scratch.
 
-Not yet implemented: Rust backend compilation (requires MSVC), tests, CI/CD.
+## Architecture
 
-## What this project is
+- **Dual persistence:** `@tauri-apps/plugin-store` with silent localStorage fallback (works in browser-only dev via `npm run dev`)
+- **Theme:** defaults dark synchronously before config load; async load may override
+- **Build chain:** `vue-tsc --noEmit` (typecheck) then `vite build`
+- **Imports:** `@/` alias — `./src/`
+- **Rust backend:** 4 commands — `get_hardware_info`, `save_run`, `list_runs`, `delete_run`
+- **Leaderboard:** separate Cloudflare Worker in `leaderboard-worker/` (Wrangler v4, KV store)
 
-A Tauri + Vue.js desktop app for benchmarking local LLMs via OpenAI-compatible APIs (Ollama, vLLM, llama.cpp, LM Studio, SGLang).
+## Commands
 
-Intended stack:
-- **Frontend:** Vue 3 (Composition API) + Vite
-- **Desktop:** Tauri (Rust)
-- **Charts:** ECharts
-- **API:** OpenAI-compatible `/chat/completions` (streaming)
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Vite dev at `http://localhost:1420` |
+| `npm run build` | Typecheck + production build |
+| `npm run typecheck` | `vue-tsc --noEmit` only |
+| `npm run preview` | Vite preview of built output |
+| `npm run tauri:dev` | Tauri dev (native window) |
+| `npm run tauri:build` | Production build + installers |
+| `cargo check` | Rust typecheck (faster than cargo build) |
 
-## Key files
+## Windows Rust note
 
-| File | Purpose |
-|------|---------|
-| `TokRate.md` | Original vision, features, and architecture |
-| `docs/plan.md` | Detailed implementation plan with phases, tasks, and acceptance criteria |
-| `PRODUCT.md` | Product register, users, brand personality, design principles |
-| `DESIGN.md` | Color palette, typography, spacing, motion tokens |
-
-## Build & dev commands
-
-```bash
-npm run dev            # Vite dev server (browser-only, http://localhost:1420)
-npm run tauri:dev      # Tauri dev (native window)
-npm run build          # vue-tsc typecheck + vite build
-npm run tauri:build    # Production Tauri build
-cargo check            # Rust typecheck only (faster than build)
-```
-
-**Windows Rust build note:** Requires MSVC `link.exe`. Run this once per PowerShell session:
+MSVC linker required per session:
 ```powershell
 $env:Path = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64;$env:Path"
 ```
+Or run `vcvars64.bat` from a VS BuildTools install.
 
-Or run `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat` first.
+## v2 roadmap
 
-## For future sessions
+See `docs/plan-v2.md` for the full execution plan. Four phases:
 
-Before starting any implementation work, first read `TokRate.md` then `docs/plan.md`.
+1. **Proxy mode** — background HTTP proxy that captures real-usage metrics
+2. **Smart comparison** — quantization scanner + engine hunter
+3. **Regression detection** — performance timeline + delta alerts
+4. **Hardware-aware leaderboard** — filter by GPU, RAM, CPU, OS
 
-There are no existing tests, lint configs, CI workflows, or dev scripts yet. Everything must be scaffolded from scratch.
+## Leaderboard worker
+
+```bash
+cd leaderboard-worker
+npm install
+npx wrangler kv:namespace create LEADERBOARD
+# Paste KV id into wrangler.toml
+npx wrangler deploy
+# Update URL in src/api/leaderboard.ts:3
+```

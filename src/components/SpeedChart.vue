@@ -12,6 +12,7 @@ const props = defineProps<{
   phase?: "thinking" | "answering";
   thinkingData?: { time: number; tps: number }[];
   answeringData?: { time: number; tps: number }[];
+  thinkingMode?: boolean;
 }>();
 
 const containerRef = ref<HTMLElement | null>(null);
@@ -42,7 +43,7 @@ function initChart() {
       axisLabel: { color: MUTED, fontSize: 9 },
       splitLine: { lineStyle: { color: BORDER, opacity: 0.2 } },
     },
-    series: [
+    series: props.thinkingMode ? [
       {
         name: "Thinking",
         type: "line",
@@ -69,6 +70,20 @@ function initChart() {
           },
         },
       },
+    ] : [
+      {
+        name: "Speed",
+        type: "line",
+        data: [],
+        smooth: true,
+        showSymbol: false,
+        lineStyle: { width: 2, color: PRIMARY },
+        areaStyle: {
+          color: { type: "linear", x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [{ offset: 0, color: PRIMARY }, { offset: 1, color: "transparent" }],
+          },
+        },
+      },
     ],
     animation: false,
   });
@@ -77,8 +92,10 @@ function initChart() {
 function updateChart() {
   if (!chart) return;
   chart.setOption({
-    series: [
+    series: props.thinkingMode ? [
       { data: (props.thinkingData || []).map((p) => [p.time, p.tps]) },
+      { data: (props.answeringData || []).map((p) => [p.time, p.tps]) },
+    ] : [
       { data: (props.answeringData || []).map((p) => [p.time, p.tps]) },
     ],
   });
@@ -86,7 +103,7 @@ function updateChart() {
 
 function reset() {
   if (chart) {
-    chart.setOption({ series: [{ data: [] }, { data: [] }] });
+    chart.setOption({ series: props.thinkingMode ? [{ data: [] }, { data: [] }] : [{ data: [] }] });
   }
 }
 
@@ -109,8 +126,10 @@ onUnmounted(() => {
     <div class="panel-header" @click="visible = !visible">
       <span class="panel-title">Speed over time</span>
       <span class="legend">
-        <span class="legend-dot thinking" /> Thinking
-        <span class="legend-dot answering" /> Answering
+        <template v-if="thinkingMode">
+          <span class="legend-dot thinking" /> Thinking
+        </template>
+        <span class="legend-dot answering" /> {{ thinkingMode ? "Answering" : "Speed" }}
       </span>
       <span class="toggle-btn">{{ visible ? "▲" : "▼" }}</span>
     </div>

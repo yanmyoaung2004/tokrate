@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
 import { useConfigStore, type Provider } from "@/stores/config";
 import { useToastStore } from "@/stores/toast";
+import { useProxyStore } from "@/stores/proxy";
 import { testConnection, fetchModels } from "@/api/client";
 import { scanLocalEngines, type DiscoveredEngine } from "@/api/discovery";
 
 const config = useConfigStore();
 const toast = useToastStore();
+const proxy = useProxyStore();
+const proxyPortInput = ref(8080);
+
+onMounted(() => { proxy.refresh(); });
 
 const editing = ref<Provider | null>(null);
 const editLabel = ref("");
@@ -20,6 +25,16 @@ const scanProgress = ref(0);
 const scanTotal = ref(0);
 const discovered = ref<DiscoveredEngine[]>([]);
 const showScan = ref(false);
+
+async function startProxy() {
+  await proxy.start(proxyPortInput.value, config.serverUrl);
+  toast.add(proxy.running ? `Proxy started on :${proxyPortInput.value}` : "Failed to start proxy", proxy.running ? "success" : "error");
+}
+
+function stopProxy() {
+  proxy.stop();
+  toast.add("Proxy stopped", "info");
+}
 
 async function startScan() {
   scanning.value = true;
@@ -211,6 +226,30 @@ async function testProvider(idx: number) {
       </div>
     </div>
 
+    <!-- Proxy -->
+    <div class="section">
+      <h2 class="section-title">Proxy</h2>
+      <p class="section-desc">Run a local HTTP proxy that forwards OpenAI-compatible requests and captures metrics. Point your tools at <code>http://localhost:PORT</code>.</p>
+
+      <div class="proxy-row">
+        <div class="proxy-info">
+          <div class="proxy-status-row">
+            <span class="proxy-dot" :class="proxy.running ? 'on' : 'off'"></span>
+            <span class="proxy-status-text">{{ proxy.running ? 'Running' : 'Stopped' }}</span>
+          </div>
+          <span v-if="proxy.running" class="proxy-count">{{ proxy.requestCount }} request{{ proxy.requestCount !== 1 ? 's' : '' }}</span>
+        </div>
+        <div class="proxy-actions">
+          <div v-if="!proxy.running" class="proxy-port-group">
+            <input v-model.number="proxyPortInput" type="number" min="1024" max="65535" class="input mono port-input" placeholder="8080" />
+            <button class="btn primary" @click="startProxy">Start</button>
+          </div>
+          <button v-else class="btn danger" @click="stopProxy">Stop</button>
+        </div>
+      </div>
+      <span v-if="proxy.error" class="proxy-error">{{ proxy.error }}</span>
+    </div>
+
     <!-- Preferences -->
     <div class="section">
       <h2 class="section-title">Preferences</h2>
@@ -319,6 +358,26 @@ async function testProvider(idx: number) {
   border: 1px solid var(--border); border-radius: var(--radius-md);
 }
 .pref-label { font-size: 13px; font-weight: 500; }
+
+/* Proxy */
+.section-desc { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.section-desc code { font-family: var(--font-mono); font-size: 11px; background: var(--bg); padding: 1px 4px; border-radius: 3px; }
+.proxy-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--space-3); background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius-md); gap: var(--space-3);
+}
+.proxy-info { display: flex; flex-direction: column; gap: 4px; }
+.proxy-status-row { display: flex; align-items: center; gap: var(--space-2); }
+.proxy-dot { width: 8px; height: 8px; border-radius: 50%; }
+.proxy-dot.on { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.proxy-dot.off { background: var(--muted); }
+.proxy-status-text { font-size: 13px; font-weight: 500; }
+.proxy-count { font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
+.proxy-actions { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
+.proxy-port-group { display: flex; align-items: center; gap: var(--space-1); }
+.port-input { width: 80px; }
+.proxy-error { font-size: 11px; color: var(--danger); margin-top: 2px; }
 
 /* Shared buttons */
 .btn {

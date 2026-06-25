@@ -7,6 +7,7 @@ const props = defineProps<{
   thinkingTps?: number;
   answeringTps?: number;
   streaming: boolean;
+  thinkingMode?: boolean;
 }>();
 
 const items = computed(() => [

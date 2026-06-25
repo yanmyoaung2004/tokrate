@@ -136,6 +136,7 @@ export async function* streamChat(
       stream: true,
       temperature: options?.temperature ?? 0.7,
       max_tokens: options?.maxTokens ?? 2048,
+      ...(options?.thinking === false ? { reasoning_effort: "none" } : {}),
       ...(options?.tools?.length ? { tools: options.tools } : {}),
     }),
     signal: options?.signal,

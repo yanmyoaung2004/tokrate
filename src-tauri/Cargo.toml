@@ -16,6 +16,16 @@ tauri-plugin-store = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sysinfo = "0.32"
+# HTTP proxy
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+hyper = { version = "1", features = ["server", "http1", "client"] }
+hyper-util = { version = "0.1", features = ["tokio", "client-legacy", "http1"] }
+http-body-util = "0.1"
+bytes = "1"
+futures-util = "0.3"
+uuid = { version = "1", features = ["v4"] }
+chrono = "0.4"
 
 [profile.release]
 strip = true

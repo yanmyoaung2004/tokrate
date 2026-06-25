@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { useRouter, useRoute } from "vue-router";
 import { useConfigStore } from "@/stores/config";
+import { useProxyStore } from "@/stores/proxy";
 
 const router = useRouter();
 const route = useRoute();
 const config = useConfigStore();
+const proxy = useProxyStore();
 
 const navItems = [
   { path: "/", label: "Playground", icon: "▶" },
@@ -35,6 +37,10 @@ const navItems = [
       </li>
     </ul>
     <div class="sidebar-footer">
+      <div class="proxy-indicator" :title="proxy.running ? 'Proxy running on :' + proxy.port : 'Proxy stopped'">
+        <span class="proxy-led" :class="proxy.running ? 'on' : 'off'"></span>
+        <span class="proxy-label">Proxy {{ proxy.running ? ':' + proxy.port : 'off' }}</span>
+      </div>
       <button class="theme-toggle" @click="config.toggleTheme()" :title="config.theme === 'dark' ? 'Switch to light' : 'Switch to dark'">
         {{ config.theme === 'dark' ? '☀' : '☾' }}
       </button>
@@ -125,6 +131,16 @@ const navItems = [
   padding: var(--space-3);
   border-top: 1px solid var(--border);
 }
+
+.proxy-indicator {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3); margin-bottom: var(--space-1);
+  border-radius: var(--radius-md); cursor: default;
+}
+.proxy-led { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.proxy-led.on { background: var(--success); box-shadow: 0 0 4px var(--success); }
+.proxy-led.off { background: var(--muted); }
+.proxy-label { font-size: 11px; color: var(--muted); }
 
 .theme-toggle {
   width: 100%;
