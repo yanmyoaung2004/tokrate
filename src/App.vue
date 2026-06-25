@@ -7,6 +7,9 @@ import ToastContainer from "@/components/ToastContainer.vue";
 
 const config = useConfigStore();
 
+// Set theme immediately (defaults to dark, overridden after config loads)
+document.documentElement.setAttribute("data-theme", "dark");
+
 onMounted(async () => {
   await config.load();
   document.documentElement.setAttribute(

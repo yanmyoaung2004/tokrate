@@ -100,6 +100,8 @@ export const useConfigStore = defineStore("config", () => {
       seen.add(p.url);
       return true;
     });
+    // Sync theme to DOM immediately (before async persistence)
+    document.documentElement.setAttribute("data-theme", theme.value);
     await storeSet("serverUrl", serverUrl.value);
     await storeSet("apiKey", apiKey.value);
     await storeSet("defaultModel", defaultModel.value);
@@ -107,7 +109,6 @@ export const useConfigStore = defineStore("config", () => {
     await storeSet("timeout", timeout.value);
     await storeSet("providers", providers.value);
     await storeSet("activeProvider", activeProvider.value);
-    document.documentElement.setAttribute("data-theme", theme.value);
   }
 
   function selectProvider(url: string, key: string) {
