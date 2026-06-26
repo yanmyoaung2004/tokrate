@@ -17,6 +17,7 @@ pub fn run() {
             proxy_start,
             proxy_stop,
             proxy_status,
+            proxy_drain_runs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

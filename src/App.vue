@@ -1,21 +1,40 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { onMounted, onUnmounted } from "vue";
 import { useConfigStore } from "@/stores/config";
+import { useProxyStore } from "@/stores/proxy";
+import { useHistoryStore } from "@/stores/history";
+import { useToastStore } from "@/stores/toast";
 import Sidebar from "@/components/Sidebar.vue";
 import ConnectionStatus from "@/components/ConnectionStatus.vue";
 import ToastContainer from "@/components/ToastContainer.vue";
 
 const config = useConfigStore();
+const proxy = useProxyStore();
+const history = useHistoryStore();
+const toast = useToastStore();
+
+let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 // Set theme immediately (defaults to dark, overridden after config loads)
 document.documentElement.setAttribute("data-theme", "dark");
 
 onMounted(async () => {
   await config.load();
-  document.documentElement.setAttribute(
-    "data-theme",
-    config.theme
-  );
+  document.documentElement.setAttribute("data-theme", config.theme);
+
+  // Poll proxy runs every 5 seconds when proxy is running
+  pollTimer = setInterval(async () => {
+    if (!proxy.running) return;
+    const runs = await proxy.drainRuns();
+    for (const run of runs) {
+      await history.addRun(run);
+      toast.add(`Proxy: ${run.model} — ${run.tps.toFixed(1)} tok/s`, "info");
+    }
+  }, 5000);
+});
+
+onUnmounted(() => {
+  if (pollTimer) clearInterval(pollTimer);
 });
 </script>
 

@@ -6,10 +6,12 @@ import { useToastStore } from "@/stores/toast";
 import { streamChat, fetchModels } from "@/api/client";
 import type { RunMetrics } from "@/types";
 import { TEMPLATES } from "@/data/templates";
+import { useTemplatesStore } from "@/stores/templates";
 
 const config = useConfigStore();
 const suites = useSuitesStore();
 const toast = useToastStore();
+const customTemplates = useTemplatesStore();
 
 const selectedId = ref("");
 const newName = ref("");
@@ -223,6 +225,16 @@ function avgTtft(): string {
                   <span class="tp-preview">{{ t.content.slice(0, 60) }}{{ t.content.length > 60 ? "…" : "" }}</span>
                 </div>
               </div>
+              <div v-if="customTemplates.custom.length" class="tp-divider"></div>
+              <div v-if="customTemplates.custom.length" class="tp-section-label">Custom</div>
+              <div v-for="t in customTemplates.custom" :key="t.id" class="tp-item" @click="addTemplatePrompt(t)">
+                <span class="tp-name">{{ t.name }}</span>
+                <span class="tp-preview">{{ t.content.slice(0, 60) }}{{ t.content.length > 60 ? "…" : "" }}</span>
+                <button class="tp-remove" @click.stop="customTemplates.remove(t.id)" title="Remove">✕</button>
+              </div>
+            </div>
+            <div v-if="newPromptName.trim() && newPromptContent.trim()" class="save-template-row">
+              <button class="btn sm" @click="customTemplates.add(newPromptName.trim(), newPromptContent.trim()); toast.add('Template saved', 'success')">Save as template</button>
             </div>
           </div>
         </section>

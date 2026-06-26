@@ -1,4 +1,4 @@
-use crate::proxy::{ProxyState, ProxyStatus};
+use crate::proxy::{ProxyRunBuffer, ProxyState, ProxyStatus};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use sysinfo::System;
@@ -101,4 +101,9 @@ pub fn proxy_stop(proxy: State<ProxyState>) -> Result<(), String> {
 #[tauri::command]
 pub fn proxy_status(proxy: State<ProxyState>) -> ProxyStatus {
     proxy.status()
+}
+
+#[tauri::command]
+pub fn proxy_drain_runs(proxy: State<ProxyState>) -> Vec<ProxyRunBuffer> {
+    proxy.drain_runs()
 }

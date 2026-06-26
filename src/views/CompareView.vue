@@ -7,6 +7,7 @@ import { renderMarkdown } from "@/utils/markdown";
 import type { RunMetrics } from "@/types";
 import QuantizationScanner from "@/components/QuantizationScanner.vue";
 import ComparisonChart from "@/components/ComparisonChart.vue";
+import ContextBenchmark from "@/components/ContextBenchmark.vue";
 
 interface CompareConfig {
   id: string; label: string; serverUrl: string; apiKey: string;
@@ -19,7 +20,7 @@ interface CompareResult {
   status: "pending" | "running" | "done" | "error"; error?: string;
 }
 
-const tab = ref<"compare" | "quant">("compare");
+const tab = ref<"compare" | "quant" | "context">("compare");
 
 const QUANTS = ["q2_k", "q3_k_m", "q4_0", "q4_k_m", "q5_k_m", "q6_k", "q8_0"];
 
@@ -150,7 +151,8 @@ function exportResults() {
     <div class="top-bar">
       <div class="tabs">
         <button class="tab" :class="{ active: tab === 'compare' }" @click="tab = 'compare'">Manual Compare</button>
-        <button class="tab" :class="{ active: tab === 'quant' }" @click="tab = 'quant'">Quantization Scanner</button>
+        <button class="tab" :class="{ active: tab === 'quant' }" @click="tab = 'quant'">Quantization</button>
+        <button class="tab" :class="{ active: tab === 'context' }" @click="tab = 'context'">Context Scaling</button>
       </div>
       <div class="right">
         <span v-if="running" class="progress">{{ currentProgress }}</span>
@@ -160,6 +162,7 @@ function exportResults() {
     </div>
 
     <QuantizationScanner v-if="tab === 'quant'" />
+    <ContextBenchmark v-if="tab === 'context'" />
 
     <template v-if="tab === 'compare'">
     <!-- Config cards -->
