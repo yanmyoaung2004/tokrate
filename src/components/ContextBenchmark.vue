@@ -25,6 +25,8 @@ const config = useConfigStore();
 const toast = useToastStore();
 
 const prompt = ref("");
+const providerUrl = ref(config.serverUrl);
+const providerApiKey = ref(config.apiKey);
 const model = ref("");
 const models = ref<string[]>([]);
 const loadingModels = ref(false);
@@ -33,10 +35,17 @@ const results = ref<CtxResult[]>([]);
 const chartRef = ref<HTMLElement | null>(null);
 let chart: echarts.ECharts | null = null;
 
+function onProviderChange(url: string) {
+  providerUrl.value = url;
+  const p = config.providers.find((pr) => pr.url === url);
+  if (p) providerApiKey.value = p.apiKey;
+  loadModels();
+}
+
 async function loadModels() {
   loadingModels.value = true;
   try {
-    models.value = await fetchModels(config.serverUrl, config.apiKey);
+    models.value = await fetchModels(providerUrl.value, providerApiKey.value);
     if (!model.value && models.value.length) model.value = models.value[0];
   } catch {
     toast.add("Failed to load models", "error");
@@ -75,7 +84,7 @@ async function runBenchmark() {
 
     try {
       let finalMetrics: RunMetrics | null = null;
-      for await (const chunk of streamChat(config.serverUrl, config.apiKey, model.value,
+      for await (const chunk of streamChat(providerUrl.value, providerApiKey.value, model.value,
         [{ role: "user", content: input }], {},
       )) {
         if (chunk.done) { finalMetrics = chunk.metrics as RunMetrics; break; }
@@ -173,6 +182,12 @@ Duration: ${(r.duration / 1000).toFixed(1)}s`;
     </div>
 
     <div class="ctx-row">
+      <div class="ctx-field">
+        <label>Provider</label>
+        <select v-model="providerUrl" class="ctx-select" @change="onProviderChange(providerUrl)">
+          <option v-for="p in config.providers" :key="p.url" :value="p.url">{{ p.label }}</option>
+        </select>
+      </div>
       <div class="ctx-field">
         <label>Model</label>
         <select v-model="model" class="ctx-select" :disabled="loadingModels">

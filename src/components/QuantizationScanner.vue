@@ -21,6 +21,8 @@ interface QuantResult {
 const config = useConfigStore();
 const toast = useToastStore();
 const prompt = ref("");
+const providerUrl = ref(config.serverUrl);
+const providerApiKey = ref(config.apiKey);
 const allModels = ref<string[]>([]);
 const selectedBase = ref("");
 const loading = ref(false);
@@ -28,6 +30,13 @@ const running = ref(false);
 const results = ref<QuantResult[]>([]);
 const chartRef = ref<HTMLElement | null>(null);
 let chart: echarts.ECharts | null = null;
+
+function onProviderChange(url: string) {
+  providerUrl.value = url;
+  const p = config.providers.find((pr) => pr.url === url);
+  if (p) providerApiKey.value = p.apiKey;
+  fetchAllModels();
+}
 
 const bases = computed(() => {
   const map = new Map<string, string[]>();
@@ -51,7 +60,7 @@ async function fetchAllModels() {
   loading.value = true;
   results.value = [];
   try {
-    const models = await fetchModels(config.serverUrl, config.apiKey);
+    const models = await fetchModels(providerUrl.value, providerApiKey.value);
     allModels.value = models;
     if (!selectedBase.value && bases.value.length) {
       selectedBase.value = bases.value[0].base;
@@ -81,7 +90,7 @@ async function runScan() {
     try {
       let finalMetrics: RunMetrics | null = null;
       for await (const chunk of streamChat(
-        config.serverUrl, config.apiKey, model,
+        providerUrl.value, providerApiKey.value, model,
         [{ role: "user", content: prompt.value }],
         {},
       )) {
@@ -165,6 +174,12 @@ function drawChart() {
     </div>
 
     <div class="qs-row">
+      <div class="qs-field">
+        <label>Provider</label>
+        <select v-model="providerUrl" class="qs-select" @change="onProviderChange(providerUrl)">
+          <option v-for="p in config.providers" :key="p.url" :value="p.url">{{ p.label }}</option>
+        </select>
+      </div>
       <div class="qs-field">
         <label>Model base</label>
         <select v-model="selectedBase" class="qs-select" :disabled="loading">
